@@ -57,14 +57,29 @@ if [ -x "$BUILD_PATH" ]; then
         -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.example.PhotoViewer/g" \
         -e "s/\$(PRODUCT_NAME)/PhotoViewer/g" \
         Info.plist > "${APP_BUNDLE_PATH}/Contents/Info.plist"
+    
+    # Copy icon files to Resources
+    if [ -f "icon.png" ]; then
+        cp icon.png "${APP_BUNDLE_PATH}/Contents/Resources/"
+        echo "✅ Icon copied to app bundle"
+    fi
+    
+    if [ -f "icon.svg" ]; then
+        cp icon.svg "${APP_BUNDLE_PATH}/Contents/Resources/"
+    fi
         
     echo "✅ App bundle created successfully at ${APP_BUNDLE_PATH}"
     
-    # Offer to run the app
-    read -p "Run the app now? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # Auto-run for release, prompt for debug
+    if [ "$BUILD_CONFIG" = "release" ]; then
+        echo "Launching PhotoViewer in release mode..."
         open "${APP_BUNDLE_PATH}"
+    else
+        read -p "Run the app now? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            open "${APP_BUNDLE_PATH}"
+        fi
     fi
 else
     echo "❌ Build failed or app not found at expected location"

@@ -138,7 +138,7 @@ struct PhotoThumbnailView: View {
                 Divider()
                 
                 Button(action: copyPhotoToPasteboard) {
-                    Label("Copy", systemImage: "doc.on.doc")
+                    Label(photo.isVideo ? "Copy Video" : "Copy Image", systemImage: "doc.on.doc")
                 }
                 
                 Button(action: showInFinder) {
@@ -168,8 +168,16 @@ struct PhotoThumbnailView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         
-        if let image = NSImage(contentsOf: photo.url) {
-            pasteboard.writeObjects([image])
+        if photo.isVideo {
+            // Copy video file to pasteboard
+            let types = [NSPasteboard.PasteboardType.fileURL]
+            pasteboard.declareTypes(types, owner: nil)
+            pasteboard.writeObjects([photo.url as NSURL])
+        } else {
+            // Copy image to pasteboard
+            if let image = NSImage(contentsOf: photo.url) {
+                pasteboard.writeObjects([image])
+            }
         }
     }
     

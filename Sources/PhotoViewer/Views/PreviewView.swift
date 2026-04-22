@@ -172,7 +172,7 @@ struct PreviewView: View {
                         Divider()
                         
                         Button(action: copyPhotoToPasteboard) {
-                            Label("Copy Image", systemImage: "doc.on.doc")
+                            Label(currentPhoto.isVideo ? "Copy Video" : "Copy Image", systemImage: "doc.on.doc")
                         }
                         Button(action: showInFinder) {
                             Label("Show in Finder", systemImage: "folder")
@@ -448,8 +448,16 @@ struct PreviewView: View {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         
-        if let image = fullImage ?? NSImage(contentsOf: currentPhoto.url) {
-            pasteboard.writeObjects([image])
+        if currentPhoto.isVideo {
+            // Copy video file to pasteboard
+            let types = [NSPasteboard.PasteboardType.fileURL]
+            pasteboard.declareTypes(types, owner: nil)
+            pasteboard.writeObjects([currentPhoto.url as NSURL])
+        } else {
+            // Copy image to pasteboard
+            if let image = fullImage ?? NSImage(contentsOf: currentPhoto.url) {
+                pasteboard.writeObjects([image])
+            }
         }
     }
     

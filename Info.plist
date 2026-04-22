@@ -24,6 +24,8 @@
     <string>Main</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>CFBundleIconFile</key>
+    <string>icon</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
