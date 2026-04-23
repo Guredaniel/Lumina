@@ -203,16 +203,30 @@ class PhotoScanner {
 // Helper for concurrent mapping using Swift Concurrency TaskGroups
 extension Array {
     func concurrentMap<T>(_ transform: @escaping (Element) async throws -> T) async throws -> [T] {
-        try await withThrowingTaskGroup(of: (Int, T).self) { group in
-            for (index, element) in self.enumerated() {
-                group.addTask {
-                    return (index, try await transform(element))
-                }
+        // Limit concurrency to avoid saturating the thread pool and starving the UI/Image loading
+        let maxConcurrency = 8
+        return try await withThrowingTaskGroup(of: (Int, T).self) { group in
+            var results = ContiguousArray<T?>(repeating: nil, count: self.count)
+            var currentIndex = 0
+            
+            // Feed initial batch
+            while currentIndex < Swift.min(maxConcurrency, self.count) {
+                let element = self[currentIndex]
+                let index = currentIndex
+                group.addTask { (index, try await transform(element)) }
+                currentIndex += 1
             }
             
-            var results = ContiguousArray<T?>(repeating: nil, count: self.count)
-            for try await (index, result) in group {
-                results[index] = result
+            // As tasks finish, add new ones until done
+            for try await (finishedIndex, result) in group {
+                results[finishedIndex] = result
+                
+                if currentIndex < self.count {
+                    let nextElement = self[currentIndex]
+                    let nextIndex = currentIndex
+                    group.addTask { (nextIndex, try await transform(nextElement)) }
+                    currentIndex += 1
+                }
             }
             
             return results.map { $0! }

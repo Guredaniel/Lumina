@@ -167,34 +167,48 @@ struct MediaContentView: View {
     private func loadFullImage() {
         isLoading = true
         let url = photo.url
-        DispatchQueue.global(qos: .userInitiated).async {
-            let image = NSImage(contentsOf: url) ?? ThumbnailCache.shared.thumbnail(for: url)
-            DispatchQueue.main.async {
-                self.fullImage = image
+        
+        // Use a high-priority Task to jump ahead of background scanning tasks
+        Task(priority: .userInitiated) {
+            let highResImage = await Task.detached(priority: .userInitiated) {
+                // NSImage(contentsOf:) automatically respects EXIF orientation metadata.
+                // We wrap it in a detached task to ensure I/O doesn't stutter the UI.
+                return NSImage(contentsOf: url)
+            }.value
+            
+            await MainActor.run {
+                if let image = highResImage {
+                    self.fullImage = image
+                }
                 self.isLoading = false
                 
-                if (self.enableLivePhotos && self.photo.videoURL != nil) || self.photo.isVideo {
-                    let playURL = self.photo.isVideo ? self.photo.url : self.photo.videoURL!
-                    let newPlayer = AVPlayer(url: playURL)
-                    newPlayer.isMuted = !self.photo.isVideo
-                    
-                    self.playerItemObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: newPlayer.currentItem, queue: .main) { _ in
-                        if self.livePhotoPlaybackMode == "loop" || self.photo.isVideo {
-                            newPlayer.seek(to: .zero)
-                            newPlayer.play()
-                        } else {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                self.isVideoReady = false
-                                self.isPlayingLivePhoto = false
-                            }
-                            newPlayer.seek(to: .zero)
-                        }
+                // Handle Video/Live Photo setup
+                setupPlayer()
+            }
+        }
+    }
+    
+    private func setupPlayer() {
+        if (self.enableLivePhotos && self.photo.videoURL != nil) || self.photo.isVideo {
+            let playURL = self.photo.isVideo ? self.photo.url : self.photo.videoURL!
+            let newPlayer = AVPlayer(url: playURL)
+            newPlayer.isMuted = !self.photo.isVideo
+            
+            self.playerItemObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: newPlayer.currentItem, queue: .main) { _ in
+                if self.livePhotoPlaybackMode == "loop" || self.photo.isVideo {
+                    newPlayer.seek(to: .zero)
+                    newPlayer.play()
+                } else {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        self.isVideoReady = false
+                        self.isPlayingLivePhoto = false
                     }
-                    self.player = newPlayer
-                    self.isPlayingLivePhoto = true
-                    self.player?.play()
+                    newPlayer.seek(to: .zero)
                 }
             }
+            self.player = newPlayer
+            self.isPlayingLivePhoto = true
+            self.player?.play()
         }
     }
     
@@ -245,21 +259,11 @@ struct PreviewView: View {
     }
     
     var body: some View {
-        ZStack {
-            // Background dimming - This now takes up the FULL program window
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation {
-                        viewModel.selectedPhoto = nil
-                    }
-                }
-            
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 // Toolbar
                 HStack {
                     Button(action: { 
-                        withAnimation {
+                        withAnimation(.easeIn(duration: 0.2)) {
                             viewModel.selectedPhoto = nil 
                         }
                     }) {
@@ -416,10 +420,10 @@ struct PreviewView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.white.opacity(0.1), lineWidth: 1)
             )
+            .compositingGroup() // Flattens rendering to stabilize the shadow during transitions
             .shadow(color: .black.opacity(0.5), radius: 25, y: 15) // Deep, smooth native shadow
             .padding(40) // Spacing from the main window edges
-        }
-        .colorScheme(.dark)
+            .colorScheme(.dark)
     }
     
     private func goToPreviousPhoto() {
@@ -457,7 +461,7 @@ struct PreviewView: View {
         } else {
             // It was the very last photo
             viewModel.deletePhoto(photoToDelete)
-            withAnimation {
+            withAnimation(.easeIn(duration: 0.2)) {
                 viewModel.selectedPhoto = nil
             }
         }

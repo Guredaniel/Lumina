@@ -80,9 +80,21 @@ struct ContentView: View {
             }
             
             if let photo = viewModel.selectedPhoto {
-                PreviewView(photo: photo, viewModel: viewModel)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                    .zIndex(1)
+                ZStack {
+                    // Move background dimming here so it fades independently of the scale transition
+                    Color.black.opacity(0.5)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.easeIn(duration: 0.2)) {
+                                viewModel.selectedPhoto = nil
+                            }
+                        }
+                        .transition(.opacity)
+                    
+                    PreviewView(photo: photo, viewModel: viewModel)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+                .zIndex(1)
             }
         }
         .frame(minWidth: 800, minHeight: 600)
