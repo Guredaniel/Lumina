@@ -171,9 +171,20 @@ struct MediaContentView: View {
         // Use a high-priority Task to jump ahead of background scanning tasks
         Task(priority: .userInitiated) {
             let highResImage = await Task.detached(priority: .userInitiated) {
-                // NSImage(contentsOf:) automatically respects EXIF orientation metadata.
-                // We wrap it in a detached task to ensure I/O doesn't stutter the UI.
-                return NSImage(contentsOf: url)
+                // Using CGImageSource is significantly faster for large files than NSImage(contentsOf:)
+                // as it allows us to decode a version optimized for screen resolution.
+                let options: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 3000 // High-quality preview size
+                ]
+                
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                      let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+                    return NSImage(contentsOf: url)
+                }
+                
+                return NSImage(cgImage: cgImage, size: .zero)
             }.value
             
             await MainActor.run {
@@ -263,7 +274,7 @@ struct PreviewView: View {
                 // Toolbar
                 HStack {
                     Button(action: { 
-                        withAnimation(.easeIn(duration: 0.2)) {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                             viewModel.selectedPhoto = nil 
                         }
                     }) {
@@ -461,7 +472,7 @@ struct PreviewView: View {
         } else {
             // It was the very last photo
             viewModel.deletePhoto(photoToDelete)
-            withAnimation(.easeIn(duration: 0.2)) {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                 viewModel.selectedPhoto = nil
             }
         }

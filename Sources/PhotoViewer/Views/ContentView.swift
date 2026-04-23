@@ -85,7 +85,7 @@ struct ContentView: View {
                     Color.black.opacity(0.5)
                         .ignoresSafeArea()
                         .onTapGesture {
-                            withAnimation(.easeIn(duration: 0.2)) {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                                 viewModel.selectedPhoto = nil
                             }
                         }
