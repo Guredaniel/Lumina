@@ -161,7 +161,7 @@ class PhotoViewModel: ObservableObject {
     
     func nextPhoto(after photo: Photo) -> Photo? {
         let all = allPhotosFlat
-        guard let index = all.firstIndex(of: photo) else { return nil }
+        guard let index = all.firstIndex(where: { $0.url == photo.url }) else { return nil }
         if index < all.count - 1 {
             return all[index + 1]
         }
@@ -170,7 +170,7 @@ class PhotoViewModel: ObservableObject {
     
     func previousPhoto(before photo: Photo) -> Photo? {
         let all = allPhotosFlat
-        guard let index = all.firstIndex(of: photo) else { return nil }
+        guard let index = all.firstIndex(where: { $0.url == photo.url }) else { return nil }
         if index > 0 {
             return all[index - 1]
         }
@@ -189,7 +189,7 @@ class PhotoViewModel: ObservableObject {
             
             // Remove from the photoMonths array
             for i in 0..<photoMonths.count {
-                if let photoIndex = photoMonths[i].photos.firstIndex(of: photo) {
+                if let photoIndex = photoMonths[i].photos.firstIndex(where: { $0.url == photo.url }) {
                     var updatedPhotos = photoMonths[i].photos
                     updatedPhotos.remove(at: photoIndex)
                     
