@@ -31,15 +31,14 @@ struct LivePhotoPlayerView: NSViewRepresentable {
     }
 }
 
-struct PreviewView: View {
-    let initialPhoto: Photo
+struct MediaContentView: View {
+    let photo: Photo
     @ObservedObject var viewModel: PhotoViewModel
+    let enableLivePhotos: Bool
+    let livePhotoPlaybackMode: String
     
-    @State private var currentPhoto: Photo
     @State private var fullImage: NSImage?
     @State private var isLoading = true
-    @State private var showMetadata = false
-    
     @State private var player: AVPlayer?
     @State private var playerItemObserver: NSObjectProtocol?
     @State private var isPlayingLivePhoto = false
@@ -47,9 +46,194 @@ struct PreviewView: View {
     
     @State private var currentZoom = 0.0
     @State private var totalZoom = 1.0
-    
     @State private var offset = CGSize.zero
     @State private var lastOffset = CGSize.zero
+    
+    init(photo: Photo, viewModel: PhotoViewModel, enableLivePhotos: Bool, livePhotoPlaybackMode: String) {
+        self.photo = photo
+        self.viewModel = viewModel
+        self.enableLivePhotos = enableLivePhotos
+        self.livePhotoPlaybackMode = livePhotoPlaybackMode
+        
+        // Pre-load the thumbnail instantly so it feels blazing fast
+        if let cachedThumb = ThumbnailCache.shared.thumbnail(for: photo.url) {
+            _fullImage = State(initialValue: cachedThumb)
+        }
+    }
+    
+    var body: some View {
+        ZStack {
+            ZStack {
+                if let fullImage = fullImage {
+                    Image(nsImage: fullImage)
+                        .resizable()
+                        .scaledToFit()
+                }
+                
+                if let player = player {
+                    LivePhotoPlayerView(player: player, showControls: photo.isVideo)
+                        .opacity(isVideoReady ? 1 : 0)
+                        .onReceive(player.publisher(for: \.timeControlStatus)) { status in
+                            if status == .playing && !isVideoReady {
+                                withAnimation(.easeIn(duration: 0.3)) {
+                                    isVideoReady = true
+                                }
+                            }
+                        }
+                }
+                
+                if fullImage == nil && !isVideoReady {
+                    ProgressView()
+                        .controlSize(.large)
+                }
+            }
+            .scaleEffect(totalZoom + currentZoom)
+            .offset(offset)
+            .contextMenu {
+                Button(action: { viewModel.toggleFavorite(photo: photo) }) {
+                    Label(viewModel.isFavorite(photo: photo) ? "Remove from Favorites" : "Add to Favorites", systemImage: viewModel.isFavorite(photo: photo) ? "heart.slash" : "heart")
+                }
+                
+                Divider()
+                
+                Button(action: copyPhotoToPasteboard) {
+                    Label(photo.isVideo ? "Copy Video" : "Copy Image", systemImage: "doc.on.doc")
+                }
+                Button(action: showInFinder) {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+                
+                Divider()
+                
+                Button(role: .destructive, action: { /* Handled by parent */ }) {
+                    Label("Move to Trash", systemImage: "trash")
+                }
+            }
+            .gesture(
+                MagnificationGesture()
+                    .onChanged { value in currentZoom = value - 1 }
+                    .onEnded { value in
+                        totalZoom += currentZoom
+                        currentZoom = 0
+                        if totalZoom < 1 {
+                            withAnimation {
+                                totalZoom = 1
+                                offset = .zero
+                                lastOffset = .zero
+                            }
+                        }
+                    }
+            )
+            .simultaneousGesture(
+                DragGesture()
+                    .onChanged { value in
+                        if totalZoom > 1 {
+                            offset = CGSize(
+                                width: lastOffset.width + value.translation.width,
+                                height: lastOffset.height + value.translation.height
+                            )
+                        }
+                    }
+                    .onEnded { value in
+                        if totalZoom > 1 {
+                            lastOffset = offset
+                        } else {
+                            withAnimation {
+                                offset = .zero
+                                lastOffset = .zero
+                            }
+                        }
+                    }
+            )
+            
+            if player != nil {
+                Button(action: toggleLivePhoto) {
+                    Label(photo.isVideo ? "VIDEO" : "LIVE", systemImage: isPlayingLivePhoto ? "play.circle.fill" : "pause.circle.fill")
+                        .font(.caption.bold())
+                        .padding(8)
+                        .background(Color.black.opacity(0.5))
+                        .foregroundColor(isPlayingLivePhoto ? .white : .gray)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+        .onAppear { loadFullImage() }
+        .onDisappear { resetPlayerState() }
+    }
+    
+    private func loadFullImage() {
+        isLoading = true
+        let url = photo.url
+        DispatchQueue.global(qos: .userInitiated).async {
+            let image = NSImage(contentsOf: url) ?? ThumbnailCache.shared.thumbnail(for: url)
+            DispatchQueue.main.async {
+                self.fullImage = image
+                self.isLoading = false
+                
+                if (self.enableLivePhotos && self.photo.videoURL != nil) || self.photo.isVideo {
+                    let playURL = self.photo.isVideo ? self.photo.url : self.photo.videoURL!
+                    let newPlayer = AVPlayer(url: playURL)
+                    newPlayer.isMuted = !self.photo.isVideo
+                    
+                    self.playerItemObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: newPlayer.currentItem, queue: .main) { _ in
+                        if self.livePhotoPlaybackMode == "loop" || self.photo.isVideo {
+                            newPlayer.seek(to: .zero)
+                            newPlayer.play()
+                        } else {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                self.isVideoReady = false
+                                self.isPlayingLivePhoto = false
+                            }
+                            newPlayer.seek(to: .zero)
+                        }
+                    }
+                    self.player = newPlayer
+                    self.isPlayingLivePhoto = true
+                    self.player?.play()
+                }
+            }
+        }
+    }
+    
+    private func resetPlayerState() {
+        player?.pause()
+        player = nil
+        if let observer = playerItemObserver {
+            NotificationCenter.default.removeObserver(observer)
+            playerItemObserver = nil
+        }
+    }
+    
+    private func toggleLivePhoto() {
+        isPlayingLivePhoto.toggle()
+        isPlayingLivePhoto ? player?.play() : player?.pause()
+    }
+    
+    private func copyPhotoToPasteboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        if photo.isVideo {
+            pasteboard.writeObjects([photo.url as NSURL])
+        } else if let image = fullImage ?? NSImage(contentsOf: photo.url) {
+            pasteboard.writeObjects([image])
+        }
+    }
+    
+    private func showInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([photo.url])
+    }
+}
+
+struct PreviewView: View {
+    let initialPhoto: Photo
+    @ObservedObject var viewModel: PhotoViewModel
+    
+    @State private var currentPhoto: Photo
+    @State private var showMetadata = false
+    @State private var slideDirection: CGFloat = 0
     
     @AppStorage("enableLivePhotos") private var enableLivePhotos: Bool = true
     @AppStorage("livePhotoPlaybackMode") private var livePhotoPlaybackMode: String = "loop"
@@ -58,11 +242,6 @@ struct PreviewView: View {
         self.initialPhoto = photo
         self.viewModel = viewModel
         self._currentPhoto = State(initialValue: photo)
-        
-        // Pre-load the thumbnail instantly so it feels blazing fast
-        if let cachedThumb = ThumbnailCache.shared.thumbnail(for: photo.url) {
-            self._fullImage = State(initialValue: cachedThumb)
-        }
     }
     
     var body: some View {
@@ -136,108 +315,17 @@ struct PreviewView: View {
                 .frame(height: 38)
                 .background(Color(white: 0.12))
                 
-                // Image and Navigation display
                 ZStack {
                     ZStack {
-                        if let fullImage = fullImage {
-                            Image(nsImage: fullImage)
-                                .resizable()
-                                .scaledToFit()
-                        }
-                        
-                        if let player = player {
-                            LivePhotoPlayerView(player: player, showControls: currentPhoto.isVideo)
-                                .opacity(isVideoReady ? 1 : 0)
-                                .onReceive(player.publisher(for: \.timeControlStatus)) { status in
-                                    if status == .playing && !isVideoReady {
-                                        withAnimation(.easeIn(duration: 0.3)) {
-                                            isVideoReady = true
-                                        }
-                                    }
-                                }
-                        }
-                        
-                        if fullImage == nil && !isVideoReady {
-                            ProgressView()
-                                .controlSize(.large)
-                        }
+                        MediaContentView(photo: currentPhoto, viewModel: viewModel, enableLivePhotos: enableLivePhotos, livePhotoPlaybackMode: livePhotoPlaybackMode)
+                            .id(currentPhoto.url)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: slideDirection > 0 ? .trailing : .leading).combined(with: .opacity),
+                                removal: .move(edge: slideDirection > 0 ? .leading : .trailing).combined(with: .opacity)
+                            ))
                     }
-                    .scaleEffect(totalZoom + currentZoom)
-                    .offset(offset)
-                    .contextMenu {
-                        Button(action: { viewModel.toggleFavorite(photo: currentPhoto) }) {
-                            Label(viewModel.isFavorite(photo: currentPhoto) ? "Remove from Favorites" : "Add to Favorites", systemImage: viewModel.isFavorite(photo: currentPhoto) ? "heart.slash" : "heart")
-                        }
-                        
-                        Divider()
-                        
-                        Button(action: copyPhotoToPasteboard) {
-                            Label(currentPhoto.isVideo ? "Copy Video" : "Copy Image", systemImage: "doc.on.doc")
-                        }
-                        Button(action: showInFinder) {
-                            Label("Show in Finder", systemImage: "folder")
-                        }
-                        
-                        Divider()
-                        
-                        Button(role: .destructive, action: deleteCurrentPhoto) {
-                            Label("Move to Trash", systemImage: "trash")
-                        }
-                    }
-                    .gesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                currentZoom = value - 1
-                            }
-                            .onEnded { value in
-                                totalZoom += currentZoom
-                                currentZoom = 0
-                                if totalZoom < 1 {
-                                    withAnimation {
-                                        totalZoom = 1
-                                        offset = .zero
-                                        lastOffset = .zero
-                                    }
-                                }
-                            }
-                    )
-                    .simultaneousGesture(
-                        DragGesture()
-                            .onChanged { value in
-                                if totalZoom > 1 {
-                                    offset = CGSize(
-                                        width: lastOffset.width + value.translation.width,
-                                        height: lastOffset.height + value.translation.height
-                                    )
-                                }
-                            }
-                            .onEnded { value in
-                                if totalZoom > 1 {
-                                    lastOffset = offset
-                                } else {
-                                    withAnimation {
-                                        offset = .zero
-                                        lastOffset = .zero
-                                    }
-                                }
-                            }
-                    )
-                    
-                    // Live Photo or Video Toggle Button
-                    if player != nil {
-                        Button(action: toggleLivePhoto) {
-                            Label(currentPhoto.isVideo ? "VIDEO" : "LIVE", systemImage: isPlayingLivePhoto ? "play.circle.fill" : "pause.circle.fill")
-                                .font(.caption.bold())
-                                .padding(8)
-                                .background(Color.black.opacity(0.5))
-                                .foregroundColor(isPlayingLivePhoto ? .white : .gray)
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    }
-                    
+                    .clipped()
+
                     // Navigation Buttons
                     HStack {
                         if viewModel.previousPhoto(before: currentPhoto) != nil {
@@ -332,135 +420,22 @@ struct PreviewView: View {
             .padding(40) // Spacing from the main window edges
         }
         .colorScheme(.dark)
-        .onAppear {
-            loadFullImage()
-        }
-        .onDisappear {
-            resetPlayerState()
-        }
-        .onChange(of: currentPhoto) { _ in
-            loadFullImage()
-        }
     }
     
     private func goToPreviousPhoto() {
         if let previous = viewModel.previousPhoto(before: currentPhoto) {
-            withAnimation {
+            slideDirection = -1
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 currentPhoto = previous
-                totalZoom = 1.0
-                currentZoom = 0.0
-                fullImage = ThumbnailCache.shared.thumbnail(for: previous.url)
-                resetPlayerState()
             }
         }
     }
     
     private func goToNextPhoto() {
         if let next = viewModel.nextPhoto(after: currentPhoto) {
-            withAnimation {
+            slideDirection = 1
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 currentPhoto = next
-                totalZoom = 1.0
-                currentZoom = 0.0
-                fullImage = ThumbnailCache.shared.thumbnail(for: next.url)
-                resetPlayerState()
-            }
-        }
-    }
-    
-    private func resetPlayerState() {
-        player?.pause()
-        player = nil
-        isVideoReady = false
-        isPlayingLivePhoto = false
-        if let observer = playerItemObserver {
-            NotificationCenter.default.removeObserver(observer)
-            playerItemObserver = nil
-        }
-    }
-    
-    private func toggleLivePhoto() {
-        isPlayingLivePhoto.toggle()
-        if isPlayingLivePhoto {
-            if let item = player?.currentItem {
-                let duration = item.duration.seconds
-                let current = item.currentTime().seconds
-                if duration > 0 && current >= duration - 0.1 {
-                    player?.seek(to: .zero)
-                }
-            }
-            player?.play()
-        } else {
-            player?.pause()
-        }
-    }
-    
-    private func loadFullImage() {
-        isLoading = true
-        resetPlayerState()
-        
-        let url = currentPhoto.url
-        DispatchQueue.global(qos: .userInitiated).async {
-            var image: NSImage? = nil
-            
-            // Try loading via Data first (often more robust and handles orientation metadata natively)
-            if let data = try? Data(contentsOf: url) {
-                image = NSImage(data: data)
-            }
-            // Fallback
-            if image == nil {
-                image = NSImage(contentsOf: url)
-            }
-            // Video fallback: use cached thumbnail
-            if image == nil {
-                image = ThumbnailCache.shared.thumbnail(for: url)
-            }
-            
-            DispatchQueue.main.async {
-                // Ensure we're setting the image for the currently viewed photo
-                if self.currentPhoto.url == url {
-                    self.fullImage = image
-                    self.isLoading = false
-                    
-                    if (self.enableLivePhotos && self.currentPhoto.videoURL != nil) || self.currentPhoto.isVideo {
-                        let playURL = self.currentPhoto.isVideo ? self.currentPhoto.url : self.currentPhoto.videoURL!
-                        let newPlayer = AVPlayer(url: playURL)
-                        newPlayer.isMuted = self.currentPhoto.isVideo ? false : true
-                        
-                        self.playerItemObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: newPlayer.currentItem, queue: .main) { _ in
-                            if self.livePhotoPlaybackMode == "loop" || self.currentPhoto.isVideo {
-                                newPlayer.seek(to: .zero)
-                                newPlayer.play()
-                            } else {
-                                withAnimation(.easeOut(duration: 0.3)) {
-                                    self.isVideoReady = false
-                                    self.isPlayingLivePhoto = false
-                                }
-                                newPlayer.seek(to: .zero)
-                            }
-                        }
-                        
-                        self.player = newPlayer
-                        self.isPlayingLivePhoto = true
-                        self.player?.play()
-                    }
-                }
-            }
-        }
-    }
-    
-    private func copyPhotoToPasteboard() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        
-        if currentPhoto.isVideo {
-            // Copy video file to pasteboard
-            let types = [NSPasteboard.PasteboardType.fileURL]
-            pasteboard.declareTypes(types, owner: nil)
-            pasteboard.writeObjects([currentPhoto.url as NSURL])
-        } else {
-            // Copy image to pasteboard
-            if let image = fullImage ?? NSImage(contentsOf: currentPhoto.url) {
-                pasteboard.writeObjects([image])
             }
         }
     }
