@@ -85,14 +85,14 @@ struct ContentView: View {
                     Color.black.opacity(0.5)
                         .ignoresSafeArea()
                         .onTapGesture {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
                                 viewModel.selectedPhoto = nil
                             }
                         }
                         .transition(.opacity)
                     
                     PreviewView(photo: photo, viewModel: viewModel)
-                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
                 .zIndex(1)
             }

@@ -176,7 +176,7 @@ struct MediaContentView: View {
                 let options: [CFString: Any] = [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 3000 // High-quality preview size
+                    kCGImageSourceThumbnailMaxPixelSize: 2048 // Optimized for fast retina display
                 ]
                 
                 guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -274,7 +274,7 @@ struct PreviewView: View {
                 // Toolbar
                 HStack {
                     Button(action: { 
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
                             viewModel.selectedPhoto = nil 
                         }
                     }) {
@@ -440,7 +440,7 @@ struct PreviewView: View {
     private func goToPreviousPhoto() {
         if let previous = viewModel.previousPhoto(before: currentPhoto) {
             slideDirection = -1
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
                 currentPhoto = previous
             }
         }
@@ -449,7 +449,7 @@ struct PreviewView: View {
     private func goToNextPhoto() {
         if let next = viewModel.nextPhoto(after: currentPhoto) {
             slideDirection = 1
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
                 currentPhoto = next
             }
         }
@@ -472,7 +472,7 @@ struct PreviewView: View {
         } else {
             // It was the very last photo
             viewModel.deletePhoto(photoToDelete)
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
                 viewModel.selectedPhoto = nil
             }
         }
