@@ -57,6 +57,24 @@ struct ContentView: View {
                     }
                 }
                 .navigationTitle("Photo Viewer")
+                .toolbar {
+                    ToolbarItemGroup {
+                        if viewModel.isScanning {
+                            // Only show a small spinner in the toolbar if we're already showing content.
+                            // If the main view is currently showing its own large loading indicator, 
+                            // we hide this one to avoid redundant icons.
+                            if !viewModel.photoMonths.isEmpty {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                        } else {
+                            Button(action: { viewModel.scanAllDirectories(showLoading: false) }) {
+                                Label("Refresh", systemImage: "arrow.clockwise")
+                            }
+                            .help("Scan folders for new photos")
+                        }
+                    }
+                }
             } detail: {
                 detailView
             }
@@ -71,16 +89,19 @@ struct ContentView: View {
         .onAppear {
             viewModel.loadDirectories()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
+            viewModel.scanAllDirectories(showLoading: false)
+        }
     }
     
     @ViewBuilder
     private var detailView: some View {
-        if viewModel.photoMonths.isEmpty && !viewModel.isLoading {
+        if viewModel.selectedDirectories.isEmpty {
             emptyStateView
-        } else if viewModel.isLoading {
-            loadingView
         } else if let errorMessage = viewModel.errorMessage {
             errorView(message: errorMessage)
+        } else if viewModel.isLoading || (viewModel.photoMonths.isEmpty && viewModel.isScanning) {
+            loadingView
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {

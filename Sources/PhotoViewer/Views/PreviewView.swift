@@ -431,7 +431,11 @@ struct PreviewView: View {
                                 newPlayer.seek(to: .zero)
                                 newPlayer.play()
                             } else {
-                                self.isPlayingLivePhoto = false
+                                withAnimation(.easeOut(duration: 0.3)) {
+                                    self.isVideoReady = false
+                                    self.isPlayingLivePhoto = false
+                                }
+                                newPlayer.seek(to: .zero)
                             }
                         }
                         

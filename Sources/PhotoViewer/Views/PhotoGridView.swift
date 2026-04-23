@@ -4,7 +4,6 @@ struct PhotoGridView: View {
     let title: String
     let photos: [Photo]
     @ObservedObject var viewModel: PhotoViewModel
-    @State private var thumbnails: [UUID: NSImage] = [:]
     
     @AppStorage("gridColumns") private var gridColumns: Int = 4
     
@@ -37,35 +36,33 @@ struct PhotoGridView: View {
                 .padding(.top, 16)
             
             LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(photos) { photo in
-                    PhotoThumbnailView(photo: photo, thumbnail: thumbnails[photo.id], viewModel: viewModel)
-                        .onAppear {
-                            loadThumbnail(for: photo)
-                        }
+                ForEach(photos, id: \.url) { photo in
+                    PhotoThumbnailView(photo: photo, viewModel: viewModel)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
         }
     }
-    
-    private func loadThumbnail(for photo: Photo) {
-        ThumbnailService.shared.generateThumbnail(for: photo.url, size: CGSize(width: 200, height: 200)) { image in
-            DispatchQueue.main.async {
-                thumbnails[photo.id] = image
-            }
-        }
-    }
 }
 
 struct PhotoThumbnailView: View {
     let photo: Photo
-    let thumbnail: NSImage?
     @ObservedObject var viewModel: PhotoViewModel
+    @State private var thumbnail: NSImage?
     
     @AppStorage("showFilenames") private var showFilenames: Bool = false
     @AppStorage("enableLivePhotos") private var enableLivePhotos: Bool = true
     @State private var isHovered = false
+    
+    init(photo: Photo, viewModel: PhotoViewModel) {
+        self.photo = photo
+        self.viewModel = viewModel
+        
+        // Synchronous cache check: If the image is already cached, 
+        // show it IMMEDIATELY to prevent the loading flicker.
+        _thumbnail = State(initialValue: ThumbnailCache.shared.thumbnail(for: photo.url))
+    }
     
     var body: some View {
         VStack(spacing: 4) {
@@ -128,6 +125,13 @@ struct PhotoThumbnailView: View {
             }
             .onTapGesture {
                 viewModel.selectedPhoto = photo
+            }
+            .onAppear {
+                if thumbnail == nil {
+                    ThumbnailService.shared.generateThumbnail(for: photo.url, size: CGSize(width: 200, height: 200)) { image in
+                        self.thumbnail = image
+                    }
+                }
             }
             .draggable(photo.url)
             .contextMenu {

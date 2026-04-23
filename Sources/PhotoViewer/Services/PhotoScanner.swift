@@ -181,7 +181,7 @@ class PhotoScanner {
         return formatter.date(from: dateString)
     }
     
-    private func groupPhotosByMonth(_ photos: [Photo]) -> [PhotoMonth] {
+    func groupPhotosByMonth(_ photos: [Photo]) -> [PhotoMonth] {
         struct MonthKey: Hashable {
             let year: Int
             let month: Int
