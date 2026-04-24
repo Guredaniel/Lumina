@@ -11,6 +11,8 @@ class PhotoViewModel: ObservableObject {
     @Published var selectedDirectories: [URL] = []
     @Published var favoritePaths: Set<String> = []
     
+    private var _cachedAllPhotosFlat: [Photo]?
+    
     private let photoScanner = PhotoScanner.shared
     
     init() {
@@ -63,6 +65,7 @@ class PhotoViewModel: ObservableObject {
         if showLoading {
             isLoading = true
             photoMonths = []
+            _cachedAllPhotosFlat = nil
         }
         self.errorMessage = nil
         
@@ -75,6 +78,7 @@ class PhotoViewModel: ObservableObject {
             do {
                 let months = try await photoScanner.scanDirectories(selectedDirectories)
                 self.photoMonths = months
+                self._cachedAllPhotosFlat = nil // Invalidate cache
                 self.savePhotoCache()
                 isLoading = false
                 isScanning = false
@@ -156,7 +160,11 @@ class PhotoViewModel: ObservableObject {
     }
     
     var allPhotosFlat: [Photo] {
-        photoMonths.flatMap { $0.sortedPhotos }
+        if let cached = _cachedAllPhotosFlat { return cached }
+        let flattened = photoMonths.flatMap { $0.sortedPhotos }
+        // Cache on the MainActor since this is a Published-driven view model
+        _cachedAllPhotosFlat = flattened
+        return flattened
     }
     
     func nextPhoto(after photo: Photo) -> Photo? {
@@ -192,6 +200,8 @@ class PhotoViewModel: ObservableObject {
                 if let photoIndex = photoMonths[i].photos.firstIndex(where: { $0.url == photo.url }) {
                     var updatedPhotos = photoMonths[i].photos
                     updatedPhotos.remove(at: photoIndex)
+                    
+                    _cachedAllPhotosFlat = nil // Invalidate cache
                     
                     if updatedPhotos.isEmpty {
                         photoMonths.remove(at: i)

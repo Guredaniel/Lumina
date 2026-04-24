@@ -259,6 +259,16 @@ struct PreviewView: View {
     @State private var currentPhoto: Photo
     @State private var showMetadata = false
     @State private var slideDirection: CGFloat = 0
+    @State private var isFullscreen = false
+    
+    // Hover states for buttons
+    @State private var isCloseButtonHovered = false
+    @State private var isFullscreenButtonHovered = false
+    @State private var isFavoriteButtonHovered = false
+    @State private var isDeleteButtonHovered = false
+    @State private var isMetadataButtonHovered = false
+    @State private var isLeftNavButtonHovered = false
+    @State private var isRightNavButtonHovered = false
     
     @AppStorage("enableLivePhotos") private var enableLivePhotos: Bool = true
     @AppStorage("livePhotoPlaybackMode") private var livePhotoPlaybackMode: String = "loop"
@@ -270,177 +280,207 @@ struct PreviewView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-                // Toolbar
-                HStack {
-                    Button(action: { 
-                        withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
-                            viewModel.selectedPhoto = nil 
-                        }
-                    }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(6)
-                            .background(Color.white.opacity(0.1))
-                            .clipShape(Circle())
+        ZStack {
+            // Background Color
+            (isFullscreen ? Color.black : Color(white: 0.12))
+                .ignoresSafeArea()
+            
+            // Main Image Content
+            MediaContentView(photo: currentPhoto, viewModel: viewModel, enableLivePhotos: enableLivePhotos, livePhotoPlaybackMode: livePhotoPlaybackMode)
+                .id(currentPhoto.url)
+                .transition(.asymmetric(
+                    insertion: .move(edge: slideDirection > 0 ? .trailing : .leading).combined(with: .opacity),
+                    removal: .move(edge: slideDirection > 0 ? .leading : .trailing).combined(with: .opacity)
+                ))
+                .onTapGesture(count: 2) {
+                    withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
+                        isFullscreen.toggle()
                     }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.escape, modifiers: [])
-                    
-                    Spacer()
-                    
-                    Text(currentPhoto.filename)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
-                    
-                    Spacer()
-                    
-                    // Favorite button
-                    Button(action: { viewModel.toggleFavorite(photo: currentPhoto) }) {
-                        Image(systemName: viewModel.isFavorite(photo: currentPhoto) ? "heart.fill" : "heart")
-                            .font(.system(size: 16))
-                            .foregroundColor(viewModel.isFavorite(photo: currentPhoto) ? .red : .white)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 8)
-                    
-                    // Delete button
-                    Button(action: deleteCurrentPhoto) {
-                        Image(systemName: "trash")
-                            .font(.system(size: 16))
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 8)
-                    
-                    // Metadata button
-                    Button(action: {
-                        withAnimation {
-                            showMetadata.toggle()
-                        }
-                    }) {
-                        Image(systemName: "info.circle")
-                            .font(.system(size: 16))
-                            .foregroundColor(showMetadata ? .accentColor : .white)
-                    }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 12)
-                .frame(height: 38)
-                .background(Color(white: 0.12))
-                
-                ZStack {
-                    ZStack {
-                        MediaContentView(photo: currentPhoto, viewModel: viewModel, enableLivePhotos: enableLivePhotos, livePhotoPlaybackMode: livePhotoPlaybackMode)
-                            .id(currentPhoto.url)
-                            .transition(.asymmetric(
-                                insertion: .move(edge: slideDirection > 0 ? .trailing : .leading).combined(with: .opacity),
-                                removal: .move(edge: slideDirection > 0 ? .leading : .trailing).combined(with: .opacity)
-                            ))
+        }
+        .overlay(alignment: .center) {
+            // Navigation Buttons (Floating)
+            HStack {
+                if viewModel.previousPhoto(before: currentPhoto) != nil {
+                    Button(action: goToPreviousPhoto) {
+                        Image(systemName: "chevron.left.circle.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(.white.opacity(isLeftNavButtonHovered ? 0.5 : 0.3))
+                            .shadow(radius: 4)
+                            .scaleEffect(isLeftNavButtonHovered ? 1.05 : 1.0)
                     }
-                    .clipped()
-
-                    // Navigation Buttons
-                    HStack {
-                        if viewModel.previousPhoto(before: currentPhoto) != nil {
-                            Button(action: goToPreviousPhoto) {
-                                Image(systemName: "chevron.left.circle.fill")
-                                    .font(.system(size: 44))
-                                    .foregroundColor(.white.opacity(0.5))
-                                    .shadow(radius: 4)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.leading, 16)
-                            // Keyboard shortcuts
-                            .keyboardShortcut(.leftArrow, modifiers: [])
-                        }
-                        
-                        Spacer()
-                        
-                        if viewModel.nextPhoto(after: currentPhoto) != nil {
-                            Button(action: goToNextPhoto) {
-                                Image(systemName: "chevron.right.circle.fill")
-                                    .font(.system(size: 44))
-                                    .foregroundColor(.white.opacity(0.5))
-                                    .shadow(radius: 4)
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.trailing, 16)
-                            .keyboardShortcut(.rightArrow, modifiers: [])
-                        }
+                    .buttonStyle(.plain)
+                    .contentShape(Circle())
+                    .padding(.leading, 16)
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                    .onHover { hovering in
+                        isLeftNavButtonHovered = hovering
                     }
-                    
-                    // Hidden button just for handling the delete keyboard shortcut globally in the view
-                    Button(action: deleteCurrentPhoto) { EmptyView() }
-                        .keyboardShortcut(.delete, modifiers: [.command])
-                        .opacity(0)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
-                .clipped() // Strictly contain the image within this central area
                 
-                // Metadata section
-                if showMetadata {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Image Details")
-                            .font(.headline)
-                        
-                        Divider()
-                        
-                        if let dateTime = currentPhoto.exifMetadata["dateTime"] {
-                            HStack {
-                                Text("Date:")
-                                    .fontWeight(.semibold)
-                                Spacer()
-                                Text("\(dateTime)")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        if let cameraMake = currentPhoto.exifMetadata["cameraMake"] {
-                            HStack {
-                                Text("Camera:")
-                                    .fontWeight(.semibold)
-                                Spacer()
-                                Text("\(cameraMake)")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        if let width = currentPhoto.exifMetadata["width"],
-                           let height = currentPhoto.exifMetadata["height"] {
-                            HStack {
-                                Text("Dimensions:")
-                                    .fontWeight(.semibold)
-                                Spacer()
-                                Text("\(width) × \(height)")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
+                Spacer()
+                
+                if viewModel.nextPhoto(after: currentPhoto) != nil {
+                    Button(action: goToNextPhoto) {
+                        Image(systemName: "chevron.right.circle.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(.white.opacity(isRightNavButtonHovered ? 0.5 : 0.3))
+                            .shadow(radius: 4)
+                            .scaleEffect(isRightNavButtonHovered ? 1.05 : 1.0)
                     }
-                    .padding()
-                    .background(.ultraThinMaterial)
-                    .transition(.move(edge: .bottom))
+                    .buttonStyle(.plain)
+                    .contentShape(Circle())
+                    .padding(.trailing, 16)
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                    .onHover { hovering in
+                        isRightNavButtonHovered = hovering
+                    }
                 }
             }
-            .frame(maxWidth: 1000, maxHeight: 850) // ONLY the window content is constrained
-            .background(Color(white: 0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        }
+        .overlay(alignment: .top) {
+            // Custom Toolbar Overlay
+            HStack {
+                Button(action: {
+                    withAnimation(.easeIn(duration: 0.15)) {
+                        viewModel.selectedPhoto = nil
+                    }
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(isCloseButtonHovered ? 9 : 8)
+                        .background(Color.white.opacity(isCloseButtonHovered ? 0.25 : 0.15))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape, modifiers: [])
+                .padding(.leading, isFullscreen ? 70 : 0)
+                .onHover { hovering in
+                    isCloseButtonHovered = hovering
+                }
+                
+                Spacer()
+                
+                Text(currentPhoto.filename)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .shadow(radius: 2)
+                
+                Spacer()
+                
+                HStack(spacing: 16) {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
+                            isFullscreen.toggle()
+                        }
+                    }) {
+                        Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .scaleEffect(isFullscreenButtonHovered ? 1.1 : 1.0)
+                    }
+                    .help(isFullscreen ? "Exit Full Screen" : "Enter Full Screen")
+                    .keyboardShortcut("f", modifiers: [.command])
+                    .onHover { hovering in
+                        isFullscreenButtonHovered = hovering
+                    }
+                    
+                    Button(action: { viewModel.toggleFavorite(photo: currentPhoto) }) {
+                        Image(systemName: viewModel.isFavorite(photo: currentPhoto) ? "heart.fill" : "heart")
+                            .foregroundColor(viewModel.isFavorite(photo: currentPhoto) ? .red : .white)
+                            .scaleEffect(isFavoriteButtonHovered ? 1.1 : 1.0)
+                    }
+                    .onHover { hovering in
+                        isFavoriteButtonHovered = hovering
+                    }
+                    
+                    Button(action: deleteCurrentPhoto) {
+                        Image(systemName: "trash")
+                            .scaleEffect(isDeleteButtonHovered ? 1.1 : 1.0)
+                    }
+                    .onHover { hovering in
+                        isDeleteButtonHovered = hovering
+                    }
+                    
+                    Button(action: { withAnimation { showMetadata.toggle() } }) {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(showMetadata ? .accentColor : .white)
+                            .scaleEffect(isMetadataButtonHovered ? 1.1 : 1.0)
+                    }
+                    .onHover { hovering in
+                        isMetadataButtonHovered = hovering
+                    }
+                }
+                .font(.system(size: 16))
+                .foregroundColor(.white)
+                .buttonStyle(.plain)
+                .animation(.easeInOut(duration: 0.15), value: isFullscreenButtonHovered)
+                .animation(.easeInOut(duration: 0.15), value: isFavoriteButtonHovered)
+                .animation(.easeInOut(duration: 0.15), value: isDeleteButtonHovered)
+                .animation(.easeInOut(duration: 0.15), value: isMetadataButtonHovered)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 50)
+            .background(
+                LinearGradient(gradient: Gradient(colors: [.black.opacity(0.5), .clear]), startPoint: .top, endPoint: .bottom)
             )
-            .compositingGroup() // Flattens rendering to stabilize the shadow during transitions
-            .shadow(color: .black.opacity(0.5), radius: 25, y: 15) // Deep, smooth native shadow
-            .padding(40) // Spacing from the main window edges
-            .colorScheme(.dark)
+        }
+        .overlay(alignment: .bottom) {
+            // Metadata section
+            if showMetadata {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Image Details").font(.headline)
+                    Divider()
+                    Group {
+                        metadataRow(label: "Date:", value: currentPhoto.exifMetadata["dateTime"] as? String)
+                        metadataRow(label: "Camera:", value: currentPhoto.exifMetadata["cameraMake"] as? String)
+                        if let w = currentPhoto.exifMetadata["width"], let h = currentPhoto.exifMetadata["height"] {
+                            metadataRow(label: "Dimensions:", value: "\(w) × \(h)")
+                        }
+                    }
+                }
+                .padding()
+                .frame(maxWidth: 400, alignment: .leading)
+                .background(.ultraThinMaterial)
+                .cornerRadius(12)
+                .padding(20)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .overlay {
+            Button(action: deleteCurrentPhoto) { EmptyView() }
+                .keyboardShortcut(.delete, modifiers: [.command])
+                .opacity(0)
+        }
+        .frame(maxWidth: isFullscreen ? .infinity : 1000, maxHeight: isFullscreen ? .infinity : 850)
+        .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: isFullscreen ? 0 : 12)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(isFullscreen ? 0 : 0.4), radius: isFullscreen ? 0 : 20, y: 10)
+        .padding(isFullscreen ? 0 : 40)
+        .colorScheme(.dark)
+        .animation(.easeInOut(duration: 0.15), value: isLeftNavButtonHovered)
+        .animation(.easeInOut(duration: 0.15), value: isRightNavButtonHovered)
+        .ignoresSafeArea(edges: isFullscreen ? [.bottom, .horizontal] : [])
+    }
+    
+    @ViewBuilder
+    private func metadataRow(label: String, value: String?) -> some View {
+        if let value = value {
+            HStack {
+                Text(label).fontWeight(.semibold)
+                Spacer()
+                Text(value).foregroundColor(.secondary)
+            }
+        }
     }
     
     private func goToPreviousPhoto() {
         if let previous = viewModel.previousPhoto(before: currentPhoto) {
             slideDirection = -1
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+            // Tightened response from 0.22 to 0.18 for snappier feel
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
                 currentPhoto = previous
             }
         }
@@ -449,7 +489,7 @@ struct PreviewView: View {
     private func goToNextPhoto() {
         if let next = viewModel.nextPhoto(after: currentPhoto) {
             slideDirection = 1
-            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
                 currentPhoto = next
             }
         }
