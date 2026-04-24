@@ -61,12 +61,14 @@ class PhotoViewModel: ObservableObject {
     }
     
     func scanAllDirectories(showLoading: Bool = true) {
+        if isScanning { return } // Prevent concurrent scans
+        
         isScanning = true
         if showLoading {
             isLoading = true
             photoMonths = []
-            _cachedAllPhotosFlat = nil
         }
+        _cachedAllPhotosFlat = nil // Invalidate cache early
         self.errorMessage = nil
         
         if selectedDirectories.isEmpty {
@@ -79,7 +81,6 @@ class PhotoViewModel: ObservableObject {
                 let months = try await photoScanner.scanDirectories(selectedDirectories)
                 self.photoMonths = months
                 self._cachedAllPhotosFlat = nil // Invalidate cache
-                self.savePhotoCache()
                 isLoading = false
                 isScanning = false
 
@@ -103,50 +104,11 @@ class PhotoViewModel: ObservableObject {
                 saveDirectories()
             }
         }
-        loadPhotoCache()
         scanAllDirectories(showLoading: false)
     }
     
     private func saveDirectories() {
         UserDefaults.standard.set(selectedDirectories.map { $0.path }, forKey: "photoDirectories")
-    }
-
-    private func savePhotoCache() {
-        // Save metadata like isVideo and videoURL so icons show up instantly
-        let cacheData = allPhotosFlat.map { photo in
-            [
-                "path": photo.url.path,
-                "isVideo": photo.isVideo,
-                "videoPath": photo.videoURL?.path ?? "",
-                "date": photo.date.timeIntervalSince1970
-            ] as [String : Any]
-        }
-        UserDefaults.standard.set(cacheData, forKey: "cachedPhotoMetadata")
-    }
-
-    private func loadPhotoCache() {
-        guard let cachedData = UserDefaults.standard.array(forKey: "cachedPhotoMetadata") as? [[String: Any]], 
-              !cachedData.isEmpty else { return }
-        
-        let cachedPhotos = cachedData.compactMap { dict -> Photo? in
-            guard let path = dict["path"] as? String else { return nil }
-            
-            let url = URL(fileURLWithPath: path)
-            let isVideo = dict["isVideo"] as? Bool ?? false
-            let videoPath = dict["videoPath"] as? String ?? ""
-            let timestamp = dict["date"] as? TimeInterval ?? Date().timeIntervalSince1970
-            
-            let videoURL = videoPath.isEmpty ? nil : URL(fileURLWithPath: videoPath)
-            
-            return Photo(url: url, date: Date(timeIntervalSince1970: timestamp), exifMetadata: [:], videoURL: videoURL, isVideo: isVideo)
-        }
-        
-        if !cachedPhotos.isEmpty {
-            let grouped = photoScanner.groupPhotosByMonth(cachedPhotos)
-            DispatchQueue.main.async {
-                self.photoMonths = grouped.sorted()
-            }
-        }
     }
     
     func clearPhotos() {

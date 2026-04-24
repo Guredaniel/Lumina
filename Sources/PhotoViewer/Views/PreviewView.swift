@@ -40,6 +40,7 @@ struct MediaContentView: View {
     @State private var fullImage: NSImage?
     @State private var isLoading = true
     @State private var player: AVPlayer?
+    @Binding var extractedMetadata: [String: Any]
     @State private var playerItemObserver: NSObjectProtocol?
     @State private var isPlayingLivePhoto = false
     @State private var isVideoReady = false
@@ -49,11 +50,12 @@ struct MediaContentView: View {
     @State private var offset = CGSize.zero
     @State private var lastOffset = CGSize.zero
     
-    init(photo: Photo, viewModel: PhotoViewModel, enableLivePhotos: Bool, livePhotoPlaybackMode: String) {
+    init(photo: Photo, viewModel: PhotoViewModel, enableLivePhotos: Bool, livePhotoPlaybackMode: String, extractedMetadata: Binding<[String: Any]>) {
         self.photo = photo
         self.viewModel = viewModel
         self.enableLivePhotos = enableLivePhotos
         self.livePhotoPlaybackMode = livePhotoPlaybackMode
+        self._extractedMetadata = extractedMetadata
         
         // Pre-load the thumbnail instantly so it feels blazing fast
         if let cachedThumb = ThumbnailCache.shared.thumbnail(for: photo.url) {
@@ -170,27 +172,41 @@ struct MediaContentView: View {
         
         // Use a high-priority Task to jump ahead of background scanning tasks
         Task(priority: .userInitiated) {
-            let highResImage = await Task.detached(priority: .userInitiated) {
+            let result = await Task.detached(priority: .userInitiated) {
                 // Using CGImageSource is significantly faster for large files than NSImage(contentsOf:)
-                // as it allows us to decode a version optimized for screen resolution.
                 let options: [CFString: Any] = [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
                     kCGImageSourceThumbnailMaxPixelSize: 2048 // Optimized for fast retina display
                 ]
                 
-                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                      let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-                    return NSImage(contentsOf: url)
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+                    return (NSImage(contentsOf: url), [String: Any]())
                 }
                 
-                return NSImage(cgImage: cgImage, size: .zero)
+                let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+                let image = cgImage != nil ? NSImage(cgImage: cgImage!, size: .zero) : NSImage(contentsOf: url)
+                
+                // Extract EXIF metadata here on-demand instead of during the main folder scan
+                var metadata: [String: Any] = [:]
+                if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+                    if let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] {
+                        metadata["dateTime"] = exif[kCGImagePropertyExifDateTimeOriginal as String]
+                        metadata["cameraMake"] = exif["Make"]
+                        metadata["cameraModel"] = exif["Model"]
+                    }
+                    metadata["width"] = properties[kCGImagePropertyPixelWidth as String]
+                    metadata["height"] = properties[kCGImagePropertyPixelHeight as String]
+                }
+                
+                return (image, metadata)
             }.value
             
             await MainActor.run {
-                if let image = highResImage {
+                if let image = result.0 {
                     self.fullImage = image
                 }
+                self.extractedMetadata = result.1
                 self.isLoading = false
                 
                 // Handle Video/Live Photo setup
@@ -260,6 +276,7 @@ struct PreviewView: View {
     @State private var showMetadata = false
     @State private var slideDirection: CGFloat = 0
     @State private var isFullscreen = false
+    @State private var extractedMetadata: [String: Any] = [:]
     
     // Hover states for buttons
     @State private var isCloseButtonHovered = false
@@ -286,7 +303,7 @@ struct PreviewView: View {
                 .ignoresSafeArea()
             
             // Main Image Content
-            MediaContentView(photo: currentPhoto, viewModel: viewModel, enableLivePhotos: enableLivePhotos, livePhotoPlaybackMode: livePhotoPlaybackMode)
+            MediaContentView(photo: currentPhoto, viewModel: viewModel, enableLivePhotos: enableLivePhotos, livePhotoPlaybackMode: livePhotoPlaybackMode, extractedMetadata: $extractedMetadata)
                 .id(currentPhoto.url)
                 .transition(.asymmetric(
                     insertion: .move(edge: slideDirection > 0 ? .trailing : .leading).combined(with: .opacity),
@@ -431,10 +448,11 @@ struct PreviewView: View {
                     Text("Image Details").font(.headline)
                     Divider()
                     Group {
-                        metadataRow(label: "Date:", value: currentPhoto.exifMetadata["dateTime"] as? String)
-                        metadataRow(label: "Camera:", value: currentPhoto.exifMetadata["cameraMake"] as? String)
-                        if let w = currentPhoto.exifMetadata["width"], let h = currentPhoto.exifMetadata["height"] {
-                            metadataRow(label: "Dimensions:", value: "\(w) × \(h)")
+                        let meta = extractedMetadata.isEmpty ? currentPhoto.exifMetadata : extractedMetadata
+                        metadataRow(label: "Date:", value: meta["dateTime"] as? String)
+                        metadataRow(label: "Camera:", value: meta["cameraMake"] as? String)
+                        if let w = meta["width"], let h = meta["height"] {
+                            metadataRow(label: "Dimensions:", value: "\(w) \u{00D7} \(h)")
                         }
                     }
                 }

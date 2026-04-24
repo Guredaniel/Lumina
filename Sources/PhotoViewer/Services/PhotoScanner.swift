@@ -59,64 +59,61 @@ class PhotoScanner {
     
     private func recursiveImageSearch(in directory: URL) async throws -> [Photo] {
         let fileManager = FileManager.default
-        let keys: [URLResourceKey] = [.isDirectoryKey, .typeIdentifierKey, .contentModificationDateKey]
+        // Pre-fetch all needed keys here to avoid re-hitting the disk in the loop
+        let keys: [URLResourceKey] = [.isDirectoryKey, .typeIdentifierKey, .contentModificationDateKey, .creationDateKey]
         
         guard let enumerator = fileManager.enumerator(at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
             throw NSError(domain: "PhotoScanner", code: -1, userInfo: [NSLocalizedDescriptionKey: "Cannot access directory"])
         }
         
-        var imageURLs: [URL] = []
-        var allFilePaths: Set<String> = []
+        // Store URL and pre-fetched metadata together
+        var itemsToProcess: [(url: URL, type: String, date: Date)] = []
         
         for case let fileURL as URL in enumerator {
-            allFilePaths.insert(fileURL.path)
-            
             if let resourceValues = try? fileURL.resourceValues(forKeys: Set(keys)),
                resourceValues.isDirectory != true,
                let typeIdentifier = resourceValues.typeIdentifier,
                (isImageType(typeIdentifier) || isVideoType(typeIdentifier)) {
-                imageURLs.append(fileURL)
+                
+                // Swapping priority: Modification date is often more reliable than creation date 
+                // on macOS for moved files. Defaulting to distantPast to avoid current month (April 2026).
+                let date = resourceValues.contentModificationDate ?? resourceValues.creationDate ?? Date.distantPast
+                itemsToProcess.append((fileURL, typeIdentifier, date))
             }
         }
         
         // Process media in parallel batches to avoid overloading the system
-        let mediaItems = try await imageURLs.concurrentMap { url in
-            let resourceValues = try? url.resourceValues(forKeys: [.contentModificationDateKey, .typeIdentifierKey])
-            let typeIdentifier = resourceValues?.typeIdentifier ?? ""
-            let isVideo = self.isVideoType(typeIdentifier)
-            
-            var finalDate: Date
-            var metadata: [String: Any] = [:]
+        let mediaItems = try await itemsToProcess.concurrentMap { item in
+            let isVideo = self.isVideoType(item.type)
+            let url = item.url
             var videoURL: URL? = nil
             
-            if isVideo {
-                finalDate = resourceValues?.contentModificationDate ?? Date()
-            } else {
-                let (date, extractedMetadata) = self.extractMetadata(from: url)
-                finalDate = date ?? resourceValues?.contentModificationDate ?? Date()
-                metadata = extractedMetadata
-                
-                // Check for paired video (Live Photo) using the Set for O(1) lookup
+            if !isVideo {
+                // Check for paired video (Live Photo)
                 let baseName = url.deletingPathExtension().lastPathComponent
                 let dir = url.deletingLastPathComponent()
                 let possibleVideoExtensions = ["mov", "MOV", "mp4", "MP4"]
+                
                 for ext in possibleVideoExtensions {
-                    let possiblePath = dir.appendingPathComponent("\(baseName).\(ext)").path
-                    if allFilePaths.contains(possiblePath) {
-                        videoURL = URL(fileURLWithPath: possiblePath)
+                    let possibleURL = dir.appendingPathComponent("\(baseName).\(ext)")
+                    var isDir: ObjCBool = false
+                    if FileManager.default.fileExists(atPath: possibleURL.path, isDirectory: &isDir), !isDir.boolValue {
+                        // Standardize the URL to ensure matching works correctly later
+                        videoURL = possibleURL.standardized
                         break
                     }
                 }
             }
             
-            return Photo(url: url, date: finalDate, exifMetadata: metadata, videoURL: videoURL, isVideo: isVideo)
+            return Photo(url: url.standardized, date: item.date, exifMetadata: [:], videoURL: videoURL, isVideo: isVideo)
         }
         
         // Filter out videos that are actually part of a Live Photo
-        let livePhotoVideoPaths = Set(mediaItems.compactMap { $0.videoURL?.path })
+        // Use standardized paths to ensure the filter correctly identifies the video files
+        let livePhotoVideoPaths = Set(mediaItems.compactMap { $0.videoURL?.path.lowercased() })
         return mediaItems.filter { item in
             if item.isVideo {
-                return !livePhotoVideoPaths.contains(item.url.path)
+                return !livePhotoVideoPaths.contains(item.url.path.lowercased())
             }
             return true
         }

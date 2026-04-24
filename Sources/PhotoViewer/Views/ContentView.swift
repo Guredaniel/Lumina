@@ -101,9 +101,6 @@ struct ContentView: View {
         .onAppear {
             viewModel.loadDirectories()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
-            viewModel.scanAllDirectories(showLoading: false)
-        }
     }
     
     @ViewBuilder
