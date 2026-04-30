@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @main
 struct PhotoViewerApp: App {
@@ -10,22 +11,41 @@ struct PhotoViewerApp: App {
             ContentView(viewModel: viewModel)
         }
         .commands {
-            // Add custom commands to the macOS System Menu Bar
-            
-            // 1. File Menu: Remove "New Window" and add custom actions
-            // By using 'replacing', we eliminate the default "New Window" (Cmd+N) entry.
+            // MARK: - File Menu
             CommandGroup(replacing: .newItem) {
                 Button("Add Folder...") {
                     viewModel.addDirectory()
                 }
                 .keyboardShortcut("o", modifiers: .command)
                 
+                Divider()
+                
                 Button("Clear Library") {
                     viewModel.clearPhotos()
                 }
             }
             
-            // 2. View Menu: Refresh Library
+            // MARK: - Edit Menu
+            CommandGroup(after: .newItem) {
+                Button("Add to Favorites") {
+                    if let photo = viewModel.selectedPhoto {
+                        viewModel.toggleFavorite(photo: photo)
+                    }
+                }
+                .disabled(viewModel.selectedPhoto == nil)
+                
+                Divider()
+                
+                Button("Delete") {
+                    if let photo = viewModel.selectedPhoto {
+                        viewModel.deletePhoto(photo)
+                    }
+                }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(viewModel.selectedPhoto == nil)
+            }
+            
+            // MARK: - View Menu
             CommandGroup(after: .toolbar) {
                 Button("Refresh Library") {
                     viewModel.scanAllDirectories(showLoading: false)
@@ -33,9 +53,24 @@ struct PhotoViewerApp: App {
                 .keyboardShortcut("r", modifiers: .command)
             }
             
-            // 3. View Menu: Standard macOS controls
             SidebarCommands()
             ToolbarCommands()
+            
+            // MARK: - Window Menu
+            CommandGroup(replacing: .windowList) {
+                Button("Minimize") {
+                    if let window = NSApplication.shared.keyWindow {
+                        window.miniaturize(nil)
+                    }
+                }
+                .keyboardShortcut("m", modifiers: .command)
+                
+                Button("Zoom") {
+                    if let window = NSApplication.shared.keyWindow {
+                        window.zoom(nil)
+                    }
+                }
+            }
         }
         
         // 3. App Menu: Settings
