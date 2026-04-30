@@ -271,6 +271,7 @@ struct MediaContentView: View {
 struct PreviewView: View {
     let initialPhoto: Photo
     @ObservedObject var viewModel: PhotoViewModel
+    @ObservedObject private var appSettings = AppSettings.shared
     
     @State private var currentPhoto: Photo
     @State private var showMetadata = false
@@ -287,9 +288,6 @@ struct PreviewView: View {
     @State private var isLeftNavButtonHovered = false
     @State private var isRightNavButtonHovered = false
     
-    @AppStorage("enableLivePhotos") private var enableLivePhotos: Bool = true
-    @AppStorage("livePhotoPlaybackMode") private var livePhotoPlaybackMode: String = "loop"
-    
     init(photo: Photo, viewModel: PhotoViewModel) {
         self.initialPhoto = photo
         self.viewModel = viewModel
@@ -303,7 +301,7 @@ struct PreviewView: View {
                 .ignoresSafeArea()
             
             // Main Image Content
-            MediaContentView(photo: currentPhoto, viewModel: viewModel, enableLivePhotos: enableLivePhotos, livePhotoPlaybackMode: livePhotoPlaybackMode, extractedMetadata: $extractedMetadata)
+            MediaContentView(photo: currentPhoto, viewModel: viewModel, enableLivePhotos: appSettings.enableLivePhotos, livePhotoPlaybackMode: appSettings.livePhotoPlaybackMode, extractedMetadata: $extractedMetadata)
                 .id(currentPhoto.url)
                 .transition(.asymmetric(
                     insertion: .move(edge: slideDirection > 0 ? .trailing : .leading).combined(with: .opacity),

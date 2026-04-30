@@ -4,8 +4,7 @@ struct PhotoGridView: View {
     let title: String
     let photos: [Photo]
     @ObservedObject var viewModel: PhotoViewModel
-    
-    @AppStorage("gridColumns") private var gridColumns: Int = 4
+    @ObservedObject private var appSettings = AppSettings.shared
     
     init(month: PhotoMonth, viewModel: PhotoViewModel) {
         self.title = month.monthYearString
@@ -20,10 +19,10 @@ struct PhotoGridView: View {
     }
     
     private var columns: [GridItem] {
-        if gridColumns == 0 {
-            return [GridItem(.adaptive(minimum: 150), spacing: 12)]
+        if appSettings.gridColumns == 0 {
+            return [GridItem(.adaptive(minimum: AppConstants.GridDisplay.minColumnWidth), spacing: AppConstants.GridDisplay.gridSpacing)]
         } else {
-            return Array(repeating: GridItem(.flexible(), spacing: 12), count: gridColumns)
+            return Array(repeating: GridItem(.flexible(), spacing: AppConstants.GridDisplay.gridSpacing), count: appSettings.gridColumns)
         }
     }
     
@@ -32,16 +31,16 @@ struct PhotoGridView: View {
             Text(title)
                 .font(.title2)
                 .fontWeight(.semibold)
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
+                .padding(.horizontal, AppConstants.GridDisplay.gridPadding)
+                .padding(.top, AppConstants.GridDisplay.gridPadding)
             
-            LazyVGrid(columns: columns, spacing: 12) {
+            LazyVGrid(columns: columns, spacing: AppConstants.GridDisplay.gridSpacing) {
                 ForEach(photos, id: \.url) { photo in
                     PhotoThumbnailView(photo: photo, viewModel: viewModel)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .padding(.horizontal, AppConstants.GridDisplay.gridPadding)
+            .padding(.bottom, AppConstants.GridDisplay.gridPadding)
         }
     }
 }
@@ -49,10 +48,8 @@ struct PhotoGridView: View {
 struct PhotoThumbnailView: View {
     let photo: Photo
     @ObservedObject var viewModel: PhotoViewModel
+    @ObservedObject private var appSettings = AppSettings.shared
     @State private var thumbnail: NSImage?
-    
-    @AppStorage("showFilenames") private var showFilenames: Bool = false
-    @AppStorage("enableLivePhotos") private var enableLivePhotos: Bool = true
     @State private var isHovered = false
     
     init(photo: Photo, viewModel: PhotoViewModel) {
@@ -81,7 +78,7 @@ struct PhotoThumbnailView: View {
                             .scaleEffect(0.8)
                     }
                     
-                    if enableLivePhotos && photo.videoURL != nil {
+                    if appSettings.enableLivePhotos && photo.videoURL != nil {
                         Image(systemName: "livephoto")
                             .foregroundColor(.white)
                             .padding(4)
@@ -128,8 +125,18 @@ struct PhotoThumbnailView: View {
             }
             .onAppear {
                 if thumbnail == nil {
-                    ThumbnailService.shared.generateThumbnail(for: photo.url, size: CGSize(width: 200, height: 200)) { image in
-                        self.thumbnail = image
+                    Task {
+                        do {
+                            let generatedThumbnail = try await ThumbnailService.shared.generateThumbnail(
+                                for: photo.url,
+                                size: CGSize(width: 200, height: 200)
+                            )
+                            DispatchQueue.main.async {
+                                self.thumbnail = generatedThumbnail
+                            }
+                        } catch {
+                            // Thumbnail generation failed, keep nil
+                        }
                     }
                 }
             }
@@ -157,7 +164,7 @@ struct PhotoThumbnailView: View {
                 }
             }
             
-            if showFilenames {
+            if appSettings.showFilenames {
                 Text(photo.url.lastPathComponent)
                     .font(.caption)
                     .foregroundColor(.secondary)

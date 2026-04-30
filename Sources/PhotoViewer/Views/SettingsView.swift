@@ -2,16 +2,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var viewModel: PhotoViewModel
-    
-    @AppStorage("gridColumns") private var gridColumns: Int = 4
-    @AppStorage("showFilenames") private var showFilenames: Bool = false
-    @AppStorage("enableLivePhotos") private var enableLivePhotos: Bool = true
-    @AppStorage("livePhotoPlaybackMode") private var livePhotoPlaybackMode: String = "loop"
+    @ObservedObject private var appSettings = AppSettings.shared
     
     var body: some View {
         TabView {
             Form {
-                Picker("Grid Columns:", selection: $gridColumns) {
+                Picker("Grid Columns:", selection: $appSettings.gridColumns) {
                     Text("Auto").tag(0)
                     Text("3 (Large)").tag(3)
                     Text("4 (Medium)").tag(4)
@@ -23,11 +19,11 @@ struct SettingsView: View {
                 
                 Spacer().frame(height: 10)
                 
-                Toggle("Show Filenames", isOn: $showFilenames)
-                Toggle("Enable Live Photos", isOn: $enableLivePhotos)
+                Toggle("Show Filenames", isOn: $appSettings.showFilenames)
+                Toggle("Enable Live Photos", isOn: $appSettings.enableLivePhotos)
                 
-                if enableLivePhotos {
-                    Picker("Live Playback:", selection: $livePhotoPlaybackMode) {
+                if appSettings.enableLivePhotos {
+                    Picker("Live Playback:", selection: $appSettings.livePhotoPlaybackMode) {
                         Text("Loop").tag("loop")
                         Text("Play Once").tag("once")
                     }
@@ -36,7 +32,7 @@ struct SettingsView: View {
                 }
             }
             .padding(40)
-            .frame(width: 400, height: 210)
+            .frame(width: AppConstants.UI.settingsWindowWidth, height: AppConstants.UI.settingsWindowHeight)
             .tabItem {
                 Label("General", systemImage: "gearshape")
             }

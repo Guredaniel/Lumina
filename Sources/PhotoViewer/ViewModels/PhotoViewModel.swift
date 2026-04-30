@@ -1,151 +1,133 @@
 import Foundation
 
+/// Main view model coordinating the PhotoViewer application state.
+/// Acts as a single source of truth for views, delegating specific concerns to focused managers.
 @MainActor
 class PhotoViewModel: ObservableObject {
+    // MARK: - Published Properties (View State)
     @Published var photoMonths: [PhotoMonth] = []
     @Published var isLoading = false
     @Published var selectedPhoto: Photo? = nil
     @Published var isScanning = false
     @Published var errorMessage: String? = nil
-    
     @Published var selectedDirectories: [URL] = []
     @Published var favoritePaths: Set<String> = []
     
-    private var _cachedAllPhotosFlat: [Photo]?
+    // MARK: - Private Managers
+    private let scanCoordinator: ScanCoordinator
+    private let directoryManager: DirectoryManager
+    private let favoriteManager: FavoriteManager
     
-    private let photoScanner = PhotoScanner.shared
-    
+    // MARK: - Initialization
     init() {
-        loadFavorites()
+        scanCoordinator = ScanCoordinator()
+        directoryManager = DirectoryManager()
+        favoriteManager = FavoriteManager()
+        
+        // Load persisted state
+        directoryManager.loadDirectories()
+        favoriteManager.loadFavorites()
+        
+        // Sync directory state
+        selectedDirectories = directoryManager.selectedDirectories
+        favoritePaths = favoriteManager.favoritePaths
     }
     
-    func toggleFavorite(photo: Photo) {
-        if favoritePaths.contains(photo.url.path) {
-            favoritePaths.remove(photo.url.path)
-        } else {
-            favoritePaths.insert(photo.url.path)
-        }
-        saveFavorites()
-    }
-    
-    func isFavorite(photo: Photo) -> Bool {
-        favoritePaths.contains(photo.url.path)
-    }
-    
-    private func loadFavorites() {
-        if let saved = UserDefaults.standard.stringArray(forKey: "favoritePhotoPaths") {
-            favoritePaths = Set(saved)
-        }
-    }
-    
-    private func saveFavorites() {
-        UserDefaults.standard.set(Array(favoritePaths), forKey: "favoritePhotoPaths")
-    }
+    // MARK: - Directory Management (delegates to DirectoryManager)
     
     func addDirectory() {
-        guard let directory = photoScanner.selectDirectory() else {
+        guard let directory = directoryManager.selectAndAddDirectory() else {
             return
         }
-        
-        if !selectedDirectories.contains(directory) {
-            selectedDirectories.append(directory)
-            saveDirectories()
-            scanAllDirectories()
-        }
-    }
-    
-    func removeDirectory(_ url: URL) {
-        selectedDirectories.removeAll { $0 == url }
-        saveDirectories()
+        selectedDirectories = directoryManager.selectedDirectories
         scanAllDirectories()
     }
     
+    func removeDirectory(_ url: URL) {
+        directoryManager.removeDirectory(url)
+        selectedDirectories = directoryManager.selectedDirectories
+        scanAllDirectories()
+    }
+    
+    func loadDirectories() {
+        directoryManager.loadDirectories()
+        selectedDirectories = directoryManager.selectedDirectories
+        scanAllDirectories(showLoading: false)
+    }
+    
+    // MARK: - Favorite Management (delegates to FavoriteManager)
+    
+    func toggleFavorite(photo: Photo) {
+        favoriteManager.toggleFavorite(photoPath: photo.url.path)
+        favoritePaths = favoriteManager.favoritePaths
+    }
+    
+    func isFavorite(photo: Photo) -> Bool {
+        favoriteManager.isFavorite(photoPath: photo.url.path)
+    }
+    
+    // MARK: - Scan Operations (delegates to ScanCoordinator)
+    
     func scanAllDirectories(showLoading: Bool = true) {
-        if isScanning { return } // Prevent concurrent scans
+        // Prevent concurrent scans
+        guard !isScanning else { return }
         
         isScanning = true
         if showLoading {
             isLoading = true
             photoMonths = []
         }
-        _cachedAllPhotosFlat = nil // Invalidate cache early
-        self.errorMessage = nil
+        errorMessage = nil
         
+        // Early exit if no directories selected
         if selectedDirectories.isEmpty {
             isLoading = false
+            isScanning = false
             return
         }
         
         Task {
             do {
-                let months = try await photoScanner.scanDirectories(selectedDirectories)
+                let months = try await PhotoScanner.shared.scanDirectories(selectedDirectories)
                 self.photoMonths = months
-                self._cachedAllPhotosFlat = nil // Invalidate cache
-                isLoading = false
-                isScanning = false
-
+                self.isLoading = false
+                self.isScanning = false
+                
                 if months.isEmpty {
-                    errorMessage = "No photos found in the selected directories"
+                    self.errorMessage = AppConstants.Messages.noPhotosFound
                 }
             } catch {
-                isLoading = false
-                errorMessage = "Error scanning directories: \(error.localizedDescription)"
+                self.isLoading = false
+                self.isScanning = false
+                let photoError = error as? PhotoViewerError ?? .scanFailed(reason: error.localizedDescription)
+                self.errorMessage = photoError.errorDescription
             }
         }
     }
     
-    func loadDirectories() {
-        if let paths = UserDefaults.standard.stringArray(forKey: "photoDirectories") {
-            selectedDirectories = paths.map { URL(fileURLWithPath: $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
-        } else if let legacyPath = UserDefaults.standard.string(forKey: "lastPhotoDirectory") {
-            let directory = URL(fileURLWithPath: legacyPath)
-            if FileManager.default.fileExists(atPath: legacyPath) {
-                selectedDirectories = [directory]
-                saveDirectories()
-            }
-        }
-        scanAllDirectories(showLoading: false)
-    }
-    
-    private func saveDirectories() {
-        UserDefaults.standard.set(selectedDirectories.map { $0.path }, forKey: "photoDirectories")
-    }
-    
-    func clearPhotos() {
-        photoMonths = []
-        selectedPhoto = nil
-        errorMessage = nil
-    }
+    // MARK: - Photo Navigation
     
     func getPhotosInMonth(_ month: PhotoMonth) -> [Photo] {
         return month.sortedPhotos
     }
     
     var allPhotosFlat: [Photo] {
-        if let cached = _cachedAllPhotosFlat { return cached }
-        let flattened = photoMonths.flatMap { $0.sortedPhotos }
-        // Cache on the MainActor since this is a Published-driven view model
-        _cachedAllPhotosFlat = flattened
-        return flattened
+        return photoMonths.flatMap { $0.sortedPhotos }
     }
     
     func nextPhoto(after photo: Photo) -> Photo? {
         let all = allPhotosFlat
         guard let index = all.firstIndex(where: { $0.url == photo.url }) else { return nil }
-        if index < all.count - 1 {
-            return all[index + 1]
-        }
-        return nil
+        return index < all.count - 1 ? all[index + 1] : nil
     }
     
     func previousPhoto(before photo: Photo) -> Photo? {
         let all = allPhotosFlat
         guard let index = all.firstIndex(where: { $0.url == photo.url }) else { return nil }
-        if index > 0 {
-            return all[index - 1]
-        }
-        return nil
+        return index > 0 ? all[index - 1] : nil
     }
+    
+    // MARK: - Photo Management
     
     func deletePhoto(_ photo: Photo) {
         do {
@@ -163,8 +145,6 @@ class PhotoViewModel: ObservableObject {
                     var updatedPhotos = photoMonths[i].photos
                     updatedPhotos.remove(at: photoIndex)
                     
-                    _cachedAllPhotosFlat = nil // Invalidate cache
-                    
                     if updatedPhotos.isEmpty {
                         photoMonths.remove(at: i)
                     } else {
@@ -174,14 +154,17 @@ class PhotoViewModel: ObservableObject {
                 }
             }
             
-            // If the deleted photo is currently selected in PreviewView, we need to handle that.
-            // This is typically handled by the PreviewView itself moving to the next/prev photo before calling delete.
             if selectedPhoto == photo {
                 selectedPhoto = nil
             }
         } catch {
-            print("DEBUG: Failed to delete photo: \(error)")
             self.errorMessage = "Failed to move photo to trash: \(error.localizedDescription)"
         }
+    }
+    
+    func clearPhotos() {
+        photoMonths = []
+        selectedPhoto = nil
+        errorMessage = nil
     }
 }
