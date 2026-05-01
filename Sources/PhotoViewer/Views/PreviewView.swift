@@ -160,6 +160,7 @@ struct MediaContentView: View {
                 .buttonStyle(.plain)
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .offset(y: 20)
             }
         }
         .onAppear { loadFullImage() }
