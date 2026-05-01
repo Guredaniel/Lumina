@@ -145,6 +145,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                .id("PhotoDetailScrollView") // Assign a stable ID to preserve scroll position
             }
             .navigationTitle(detailTitle)
         }
