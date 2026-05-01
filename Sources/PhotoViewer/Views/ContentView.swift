@@ -61,8 +61,8 @@ struct ContentView: View {
             detailView
         }
         .overlay {
-            ZStack {
-                if let photo = viewModel.selectedPhoto {
+            if let photo = viewModel.selectedPhoto {
+                ZStack {
                     Color.black.opacity(0.5)
                         .ignoresSafeArea()
                         .onTapGesture {
@@ -75,6 +75,7 @@ struct ContentView: View {
                     PreviewView(photo: photo, viewModel: viewModel)
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
+                .zIndex(1)
             }
         }
         .frame(minWidth: 800, minHeight: 600)
@@ -92,7 +93,7 @@ struct ContentView: View {
         } else if viewModel.isLoading || (viewModel.photoMonths.isEmpty && viewModel.isScanning) {
             loadingView
         } else {
-            ScrollView {
+            ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     switch selection {
                     case .allPhotos, .none:
@@ -126,7 +127,6 @@ struct ContentView: View {
                     }
                 }
             }
-            .id("PhotoDetailScrollView")
             .navigationTitle(detailTitle)
         }
     }
