@@ -182,7 +182,8 @@ class PhotoScanner {
         }
         
         return grouped.map { key, photos in
-            PhotoMonth(year: key.year, month: key.month, photos: photos)
+            let sortedPhotos = photos.sorted { $0.date > $1.date }
+            return PhotoMonth(year: key.year, month: key.month, photos: sortedPhotos)
         }
     }
 }

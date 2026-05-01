@@ -13,6 +13,12 @@ class PhotoViewModel: ObservableObject {
     @Published var selectedDirectories: [URL] = []
     @Published var favoritePaths: Set<String> = []
     
+    // Optimized Derived Data
+    @Published var groupedYears: [Int: [PhotoMonth]] = [:]
+    @Published var sortedYears: [Int] = []
+    @Published var favoritePhotos: [Photo] = []
+    @Published var allPhotosFlat: [Photo] = []
+    
     // MARK: - Private Managers
     private let scanCoordinator: ScanCoordinator
     private let directoryManager: DirectoryManager
@@ -31,6 +37,7 @@ class PhotoViewModel: ObservableObject {
         // Sync directory state
         selectedDirectories = directoryManager.selectedDirectories
         favoritePaths = favoriteManager.favoritePaths
+        updateDerivedData()
     }
     
     // MARK: - Directory Management (delegates to DirectoryManager)
@@ -60,6 +67,7 @@ class PhotoViewModel: ObservableObject {
     func toggleFavorite(photo: Photo) {
         favoriteManager.toggleFavorite(photoPath: photo.url.path)
         favoritePaths = favoriteManager.favoritePaths
+        updateDerivedData()
     }
     
     func isFavorite(photo: Photo) -> Bool {
@@ -90,6 +98,7 @@ class PhotoViewModel: ObservableObject {
             do {
                 let months = try await PhotoScanner.shared.scanDirectories(selectedDirectories)
                 self.photoMonths = months
+                self.updateDerivedData()
                 self.isLoading = false
                 self.isScanning = false
                 
@@ -105,14 +114,21 @@ class PhotoViewModel: ObservableObject {
         }
     }
     
+    /// Updates grouped data once to prevent UI "jumping" during selection changes
+    private func updateDerivedData() {
+        let months = self.photoMonths
+        let paths = self.favoritePaths
+        
+        self.allPhotosFlat = months.flatMap { $0.photos }
+        self.groupedYears = Dictionary(grouping: months, by: { $0.year })
+        self.sortedYears = groupedYears.keys.sorted(by: >)
+        self.favoritePhotos = allPhotosFlat.filter { paths.contains($0.url.path) }
+    }
+    
     // MARK: - Photo Navigation
     
     func getPhotosInMonth(_ month: PhotoMonth) -> [Photo] {
-        return month.sortedPhotos
-    }
-    
-    var allPhotosFlat: [Photo] {
-        return photoMonths.flatMap { $0.sortedPhotos }
+        return month.photos
     }
     
     func nextPhoto(after photo: Photo) -> Photo? {
@@ -154,6 +170,7 @@ class PhotoViewModel: ObservableObject {
                 }
             }
             
+            updateDerivedData()
             if selectedPhoto == photo {
                 selectedPhoto = nil
             }
@@ -164,6 +181,7 @@ class PhotoViewModel: ObservableObject {
     
     func clearPhotos() {
         photoMonths = []
+        updateDerivedData()
         selectedPhoto = nil
         errorMessage = nil
     }

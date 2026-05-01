@@ -16,7 +16,7 @@ class ScanCoordinator {
     
     /// Returns all photos in a flat array, grouped by month.
     var allPhotosFlat: [Photo] {
-        return photoMonths.flatMap { $0.sortedPhotos }
+        return photoMonths.flatMap { $0.photos }
     }
     
     /// Finds the next photo after the given photo.

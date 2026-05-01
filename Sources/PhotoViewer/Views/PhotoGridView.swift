@@ -8,7 +8,7 @@ struct PhotoGridView: View {
     
     init(month: PhotoMonth, viewModel: PhotoViewModel) {
         self.title = month.monthYearString
-        self.photos = month.sortedPhotos
+        self.photos = month.photos
         self.viewModel = viewModel
     }
     

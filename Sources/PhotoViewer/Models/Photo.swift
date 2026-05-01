@@ -1,7 +1,7 @@
 import Foundation
 
 struct Photo: Identifiable {
-    let id = UUID()
+    var id: URL { url }
     let url: URL
     let date: Date
     let filename: String

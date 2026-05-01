@@ -4,84 +4,65 @@ enum SidebarSelection: Hashable {
     case allPhotos
     case favorites
     case year(Int)
-    case month(UUID)
+    case month(String)
 }
 
 struct ContentView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @State private var selection: SidebarSelection? = .allPhotos
     
-    // Group months by year
-    private var years: [Int: [PhotoMonth]] {
-        Dictionary(grouping: viewModel.photoMonths, by: { $0.year })
-    }
-    
-    // Sorted list of years
-    private var sortedYears: [Int] {
-        years.keys.sorted(by: >)
-    }
-    
-    private var favoritePhotos: [Photo] {
-        viewModel.allPhotosFlat.filter { viewModel.isFavorite(photo: $0) }
-    }
-    
     var body: some View {
-        ZStack {
-            NavigationSplitView {
-                List(selection: $selection) {
-                    Section {
-                        Label("All Photos", systemImage: "photo.on.rectangle")
-                            .tag(SidebarSelection.allPhotos)
-                        
-                        Label("Favorites", systemImage: "heart.fill")
-                            .tag(SidebarSelection.favorites)
-                            .foregroundColor(selection == .favorites ? .white : .brown)
-                    }
+        NavigationSplitView {
+            List(selection: $selection) {
+                Section {
+                    Label("All Photos", systemImage: "photo.on.rectangle")
+                        .tag(SidebarSelection.allPhotos)
                     
-                    if !viewModel.photoMonths.isEmpty {
-                        ForEach(sortedYears, id: \.self) { year in
-                            Section(header: Text(String(year))) {
-                                // Optionally let user select the whole year
-                                Label("All \(String(year))", systemImage: "photo.stack")
-                                    .tag(SidebarSelection.year(year))
-                                
-                                // Let user select specific month in that year
-                                if let monthsInYear = years[year] {
-                                    ForEach(monthsInYear) { month in
-                                        Label(month.monthString, systemImage: "calendar")
-                                            .tag(SidebarSelection.month(month.id))
-                                    }
+                    Label("Favorites", systemImage: "heart.fill")
+                        .tag(SidebarSelection.favorites)
+                        .foregroundColor(selection == .favorites ? .white : .brown)
+                }
+                
+                if !viewModel.sortedYears.isEmpty {
+                    ForEach(viewModel.sortedYears, id: \.self) { year in
+                        Section(header: Text(String(year))) {
+                            // Optionally let user select the whole year
+                            Label("All \(String(year))", systemImage: "photo.stack")
+                                .tag(SidebarSelection.year(year))
+                            
+                            // Let user select specific month in that year
+                            if let monthsInYear = viewModel.groupedYears[year] {
+                                ForEach(monthsInYear) { month in
+                                    Label(month.monthString, systemImage: "calendar")
+                                        .tag(SidebarSelection.month(month.id))
                                 }
                             }
                         }
                     }
                 }
-                .navigationTitle("Photo Viewer")
-                .toolbar {
-                    ToolbarItemGroup {
-                        if viewModel.isScanning {
-                            // Only show a small spinner in the toolbar if we're already showing content.
-                            // If the main view is currently showing its own large loading indicator, 
-                            // we hide this one to avoid redundant icons.
-                            if !viewModel.photoMonths.isEmpty {
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-                        } else {
-                            Button(action: { viewModel.scanAllDirectories(showLoading: false) }) {
-                                Label("Refresh", systemImage: "arrow.clockwise")
-                            }
-                            .help("Scan folders for new photos")
+            }
+            .navigationTitle("Photo Viewer")
+            .toolbar {
+                ToolbarItemGroup {
+                    if viewModel.isScanning {
+                        if !viewModel.photoMonths.isEmpty {
+                            ProgressView()
+                                .controlSize(.small)
                         }
+                    } else {
+                        Button(action: { viewModel.scanAllDirectories(showLoading: false) }) {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+                        .help("Scan folders for new photos")
                     }
                 }
-            } detail: {
-                detailView
             }
-            
-            if let photo = viewModel.selectedPhoto {
-                ZStack {
-                    // Move background dimming here so it fades independently of the scale transition
+        } detail: {
+            detailView
+        }
+        .overlay {
+            ZStack {
+                if let photo = viewModel.selectedPhoto {
                     Color.black.opacity(0.5)
                         .ignoresSafeArea()
                         .onTapGesture {
@@ -94,7 +75,6 @@ struct ContentView: View {
                     PreviewView(photo: photo, viewModel: viewModel)
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
-                .zIndex(1)
             }
         }
         .frame(minWidth: 800, minHeight: 600)
@@ -113,14 +93,14 @@ struct ContentView: View {
             loadingView
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     switch selection {
                     case .allPhotos, .none:
                         ForEach(viewModel.photoMonths) { month in
                             PhotoGridView(month: month, viewModel: viewModel)
                         }
                     case .favorites:
-                        if favoritePhotos.isEmpty {
+                        if viewModel.favoritePhotos.isEmpty {
                             VStack(spacing: 16) {
                                 Image(systemName: "heart.slash")
                                     .font(.system(size: 48))
@@ -131,10 +111,10 @@ struct ContentView: View {
                             }
                             .frame(maxWidth: .infinity, minHeight: 400)
                         } else {
-                            PhotoGridView(title: "Favorites", photos: favoritePhotos, viewModel: viewModel)
+                            PhotoGridView(title: "Favorites", photos: viewModel.favoritePhotos, viewModel: viewModel)
                         }
                     case .year(let selectedYear):
-                        if let monthsInYear = years[selectedYear] {
+                        if let monthsInYear = viewModel.groupedYears[selectedYear] {
                             ForEach(monthsInYear) { month in
                                 PhotoGridView(month: month, viewModel: viewModel)
                             }
@@ -145,8 +125,8 @@ struct ContentView: View {
                         }
                     }
                 }
-                .id("PhotoDetailScrollView") // Assign a stable ID to preserve scroll position
             }
+            .id("PhotoDetailScrollView")
             .navigationTitle(detailTitle)
         }
     }
@@ -158,7 +138,7 @@ struct ContentView: View {
         case .favorites:
             return "Favorites"
         case .year(let year):
-            return String(year)
+            return "Photos from \(year)"
         case .month(let id):
             return viewModel.photoMonths.first(where: { $0.id == id })?.monthYearString ?? "Photos"
         }
