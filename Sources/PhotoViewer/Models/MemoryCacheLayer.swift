@@ -26,9 +26,15 @@ class MemoryCacheLayer {
         cache.removeAllObjects()
     }
     
+    /// Clears a specific cached thumbnail from memory.
+    func clearCache(forKey key: String) {
+        cache.removeObject(forKey: key as NSString)
+    }
+    
     /// Estimates the memory cost of an image for cache accounting.
     private func estimateImageSize(_ image: NSImage) -> Int {
-        guard let tiffData = image.tiffRepresentation else { return 100 * 1024 }
-        return tiffData.count
+        let size = image.size
+        // Estimate 4 bytes per pixel (RGBA) for a standard uncompressed representation
+        return Int(size.width * size.height * 4)
     }
 }

@@ -6,6 +6,7 @@ class DiskCacheLayer {
     private let cacheDirectory: URL
     private let maxCacheSizeBytes: Int = AppConstants.Thumbnail.diskCacheSizeLimit
     private let fileManager = FileManager.default
+    private var writeCounter = 0
     
     init() {
         // Initialize cache directory
@@ -38,11 +39,15 @@ class DiskCacheLayer {
         if let tiffData = image.tiffRepresentation,
            let bitmapImage = NSBitmapImageRep(data: tiffData),
            let jpegData = bitmapImage.representation(using: .jpeg, properties: [.compressionFactor: AppConstants.Thumbnail.compressionQuality]) {
-            try? jpegData.write(to: cachePath)
+            // Use .atomic to ensure the file is fully written before replacing old data
+            try? jpegData.write(to: cachePath, options: .atomic)
         }
         
-        // Check if we need to purge old cache entries
-        purgeCacheIfNeeded()
+        // Only perform the expensive disk scan every 50 writes to improve performance
+        writeCounter += 1
+        if writeCounter % 50 == 0 {
+            purgeCacheIfNeeded()
+        }
     }
     
     /// Calculates a stable cache key hash for a given URL.

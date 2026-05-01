@@ -23,6 +23,7 @@ class PhotoViewModel: ObservableObject {
     private let scanCoordinator: ScanCoordinator
     private let directoryManager: DirectoryManager
     private let favoriteManager: FavoriteManager
+    private var preCachingTask: Task<Void, Never>? = nil
     
     // MARK: - Initialization
     init() {
@@ -99,6 +100,7 @@ class PhotoViewModel: ObservableObject {
                 let months = try await PhotoScanner.shared.scanDirectories(selectedDirectories)
                 self.photoMonths = months
                 self.updateDerivedData()
+                self.startBackgroundThumbnailCaching()
                 self.isLoading = false
                 self.isScanning = false
                 
@@ -110,6 +112,23 @@ class PhotoViewModel: ObservableObject {
                 self.isScanning = false
                 let photoError = error as? PhotoViewerError ?? .scanFailed(reason: error.localizedDescription)
                 self.errorMessage = photoError.errorDescription
+            }
+        }
+    }
+    
+    /// Starts a background task to pre-generate thumbnails for all discovered photos.
+    /// This populates the cache so images appear instantly when scrolling.
+    private func startBackgroundThumbnailCaching() {
+        preCachingTask?.cancel()
+        let photos = allPhotosFlat
+        
+        preCachingTask = Task(priority: .background) {
+            for photo in photos {
+                if Task.isCancelled { break }
+                
+                // generateThumbnail internally checks if it's already cached
+                _ = try? await ThumbnailService.shared.generateThumbnail(for: photo.url)
+                await Task.yield() // Ensure we don't starve the UI thread
             }
         }
     }
