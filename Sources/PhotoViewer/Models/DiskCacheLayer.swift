@@ -1,4 +1,5 @@
 import AppKit
+import CommonCrypto // Required for MD5 hashing
 
 /// Persistent disk cache layer for thumbnails.
 /// Manages storage, retrieval, and size-based eviction of cached thumbnails.
@@ -53,10 +54,10 @@ class DiskCacheLayer {
     /// Calculates a stable cache key hash for a given URL.
     /// Uses full path to avoid collisions between files with the same name in different directories.
     func cacheKey(for url: URL) -> String {
-        let fullPath = url.path
-        // Use MD5 hash of full path to create stable, collision-free key
-        let hash = fullPath.hashValue
-        return "\(hash).jpg"
+        // Use standardizedFileURL to get a consistent path, then MD5 hash for stability
+        let canonicalPath = url.standardizedFileURL.path
+        // Use .cache extension for internal cache files, as the content is JPEG data, not necessarily a .jpg file
+        return canonicalPath.md5() + ".cache" 
     }
     
     /// Gets the file path for a cache entry.
@@ -114,5 +115,17 @@ class DiskCacheLayer {
             return cachePath.appendingPathComponent("com.photoviewer/thumbnails")
         }
         return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("PhotoViewerCache")
+    }
+}
+
+// MARK: - String+MD5
+extension String {
+    func md5() -> String {
+        let data = Data(self.utf8)
+        var hash = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
+        data.withUnsafeBytes { buffer in
+            _ = CC_MD5(buffer.baseAddress, CC_LONG(buffer.count), &hash)
+        }
+        return hash.map { String(format: "%02hhx", $0) }.joined()
     }
 }

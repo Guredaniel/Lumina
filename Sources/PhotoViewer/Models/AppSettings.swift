@@ -54,7 +54,7 @@ class AppSettings: ObservableObject {
         
         self.gridColumns = defaults.object(forKey: AppConstants.UserDefaultsKeys.gridColumns) as? Int ?? AppConstants.GridDisplay.defaultColumns
         self.showFilenames = defaults.bool(forKey: AppConstants.UserDefaultsKeys.showFilenames)
-        self.enableLivePhotos = defaults.bool(forKey: AppConstants.UserDefaultsKeys.enableLivePhotos) || true
+        self.enableLivePhotos = defaults.object(forKey: AppConstants.UserDefaultsKeys.enableLivePhotos) as? Bool ?? true
         self.livePhotoPlaybackMode = defaults.string(forKey: AppConstants.UserDefaultsKeys.livePhotoPlaybackMode) ?? "loop"
     }
     

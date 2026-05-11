@@ -148,9 +148,10 @@ struct MediaContentView: View {
                     }
             )
             
-            if player != nil {
+            // Only show the play/pause button if it's a video or an enabled Live Photo
+            if (enableLivePhotos && photo.videoURL != nil) || photo.isVideo {
                 Button(action: toggleLivePhoto) {
-                    Label(photo.isVideo ? "VIDEO" : "LIVE", systemImage: isPlayingLivePhoto ? "play.circle.fill" : "pause.circle.fill")
+                    Label(photo.isVideo ? "VIDEO" : "LIVE", systemImage: isPlayingLivePhoto ? "pause.circle.fill" : "play.circle.fill") // Corrected icon logic
                         .font(.caption.bold())
                         .padding(8)
                         .background(Color.black.opacity(0.5))
