@@ -51,6 +51,7 @@ struct PhotoThumbnailView: View {
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var thumbnail: NSImage?
     @State private var isHovered = false
+    @State private var loadError: Bool = false
     
     init(photo: Photo, viewModel: PhotoViewModel) {
         self.photo = photo
@@ -73,6 +74,10 @@ struct PhotoThumbnailView: View {
                             .scaledToFill()
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
+                    } else if loadError {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundColor(.red)
+                            .scaleEffect(0.8)
                     } else {
                         ProgressView()
                             .scaleEffect(0.8)
@@ -135,7 +140,9 @@ struct PhotoThumbnailView: View {
                                 self.thumbnail = generatedThumbnail
                             }
                         } catch {
-                            // Thumbnail generation failed, keep nil
+                            DispatchQueue.main.async {
+                                self.loadError = true
+                            }
                         }
                     }
                 }

@@ -98,11 +98,11 @@ struct MediaContentView: View {
                 
                 Divider()
                 
-                Button(role: .destructive, action: { /* Handled by parent */ }) {
+                Button(role: .destructive, action: { viewModel.deletePhoto(photo) }) {
                     Label("Move to Trash", systemImage: "trash")
                 }
             }
-            .gesture(
+            .highPriorityGesture(
                 MagnificationGesture()
                     .onChanged { value in currentZoom = value - 1 }
                     .onEnded { value in
@@ -165,7 +165,7 @@ struct MediaContentView: View {
         
         // Use a high-priority Task to jump ahead of background scanning tasks
         Task(priority: .userInitiated) {
-            let result = await Task.detached(priority: .userInitiated) {
+            let imageTask = Task.detached(priority: .userInitiated) {
                 // Using CGImageSource is significantly faster for large files than NSImage(contentsOf:)
                 let options: [CFString: Any] = [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -193,13 +193,22 @@ struct MediaContentView: View {
                 }
                 
                 return (image, metadata)
-            }.value
+            }
+            
+            // Timeout after 30 seconds to prevent UI freezing on large files
+            let timeoutTask = Task {
+                try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+                imageTask.cancel()
+            }
+            
+            let result = try? await imageTask.value
+            timeoutTask.cancel() // Cancel timeout if task completed
             
             await MainActor.run {
-                if let image = result.0 {
+                if let result = result, let image = result.0 {
                     self.fullImage = image
                 }
-                self.extractedMetadata = result.1
+                self.extractedMetadata = result?.1 ?? [:]
                 self.isLoading = false
                 
                 // Handle Video/Live Photo setup
@@ -209,6 +218,9 @@ struct MediaContentView: View {
     }
     
     private func setupPlayer() {
+        // Clean up any existing player first
+        resetPlayerState()
+        
         if (self.enableLivePhotos && self.photo.videoURL != nil) || self.photo.isVideo {
             let playURL = self.photo.isVideo ? self.photo.url : self.photo.videoURL!
             let newPlayer = AVPlayer(url: playURL)

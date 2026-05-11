@@ -1,6 +1,6 @@
 import Foundation
 
-struct PhotoMonth: Identifiable {
+struct PhotoMonth: Identifiable, Sendable, Codable {
     let year: Int
     let month: Int
     let photos: [Photo]

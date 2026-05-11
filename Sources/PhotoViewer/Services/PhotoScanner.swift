@@ -127,10 +127,13 @@ class PhotoScanner {
             videoURL = detectLivePhoto(for: fileURL)
         }
         
+        // Extract metadata during scan for better performance
+        let metadata = isVideo ? [:] : extractMetadata(for: fileURL)
+        
         return Photo(
             url: fileURL.standardized,
             date: date,
-            exifMetadata: [:],
+            exifMetadata: metadata,
             videoURL: videoURL,
             isVideo: isVideo
         )
@@ -151,6 +154,39 @@ class PhotoScanner {
         }
         
         return nil
+    }
+    
+    /// Extracts basic EXIF metadata from an image file.
+    private func extractMetadata(for imageURL: URL) -> [String: Any] {
+        guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else {
+            return [:]
+        }
+        
+        var metadata: [String: Any] = [:]
+        
+        // Extract basic properties
+        if let width = properties[kCGImagePropertyPixelWidth as String] {
+            metadata["width"] = width
+        }
+        if let height = properties[kCGImagePropertyPixelHeight as String] {
+            metadata["height"] = height
+        }
+        
+        // Extract EXIF data
+        if let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] {
+            if let dateTime = exif[kCGImagePropertyExifDateTimeOriginal as String] {
+                metadata["dateTime"] = dateTime
+            }
+            if let make = exif["Make"] {
+                metadata["cameraMake"] = make
+            }
+            if let model = exif["Model"] {
+                metadata["cameraModel"] = model
+            }
+        }
+        
+        return metadata
     }
     
     // MARK: - File Type Detection

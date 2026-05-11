@@ -16,6 +16,9 @@ let package = Package(
             dependencies: [],
             swiftSettings: [
                 .unsafeFlags(["-suppress-warnings"])
+            ],
+            linkerSettings: [
+                .linkedFramework("Security")
             ]
         )
     ]

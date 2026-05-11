@@ -25,6 +25,14 @@ class PhotoViewModel: ObservableObject {
     private let favoriteManager: FavoriteManager
     private var preCachingTask: Task<Void, Never>? = nil
     
+    private let photoCacheURL: URL = {
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let storageDir = caches.appendingPathComponent("com.photoviewer", isDirectory: true)
+        try? FileManager.default.createDirectory(at: storageDir, withIntermediateDirectories: true)
+        return storageDir.appendingPathComponent("photoCache.json")
+    }()
+    
     // MARK: - Initialization
     init() {
         scanCoordinator = ScanCoordinator()
@@ -38,6 +46,7 @@ class PhotoViewModel: ObservableObject {
         // Sync directory state
         selectedDirectories = directoryManager.selectedDirectories
         favoritePaths = favoriteManager.favoritePaths
+        loadCachedPhotoMonths()
         updateDerivedData()
     }
     
@@ -100,6 +109,7 @@ class PhotoViewModel: ObservableObject {
                 let months = try await PhotoScanner.shared.scanDirectories(selectedDirectories)
                 self.photoMonths = months
                 self.updateDerivedData()
+                self.saveCachedPhotoMonths()
                 self.startBackgroundThumbnailCaching()
                 self.isLoading = false
                 self.isScanning = false
@@ -142,6 +152,30 @@ class PhotoViewModel: ObservableObject {
         self.groupedYears = Dictionary(grouping: months, by: { $0.year })
         self.sortedYears = groupedYears.keys.sorted(by: >)
         self.favoritePhotos = allPhotosFlat.filter { paths.contains($0.url.path) }
+    }
+    
+    private func loadCachedPhotoMonths() {
+        guard let data = try? Data(contentsOf: photoCacheURL) else { return }
+        guard let cachedMonths = try? JSONDecoder().decode([PhotoMonth].self, from: data) else { return }
+        self.photoMonths = filterCachedPhotoMonths(cachedMonths)
+    }
+    
+    private func saveCachedPhotoMonths() {
+        guard let data = try? JSONEncoder().encode(photoMonths) else { return }
+        try? data.write(to: photoCacheURL, options: .atomic)
+    }
+    
+    private func filterCachedPhotoMonths(_ months: [PhotoMonth]) -> [PhotoMonth] {
+        let directories = self.selectedDirectories
+        guard !directories.isEmpty else { return [] }
+        
+        return months.compactMap { month in
+            let filteredPhotos = month.photos.filter { photo in
+                directories.contains(where: { photo.url.standardizedFileURL.path.hasPrefix($0.standardizedFileURL.path) })
+            }
+            if filteredPhotos.isEmpty { return nil }
+            return PhotoMonth(year: month.year, month: month.month, photos: filteredPhotos)
+        }
     }
     
     // MARK: - Photo Navigation
@@ -199,6 +233,7 @@ class PhotoViewModel: ObservableObject {
     }
     
     func clearPhotos() {
+        preCachingTask?.cancel()
         photoMonths = []
         updateDerivedData()
         selectedPhoto = nil
