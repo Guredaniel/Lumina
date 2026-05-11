@@ -89,6 +89,7 @@ struct SettingsView: View {
             .tabItem {
                 Label("Directories", systemImage: "folder")
             }
+            
         }
     }
 }

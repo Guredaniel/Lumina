@@ -14,6 +14,9 @@ let package = Package(
         .executableTarget(
             name: "PhotoViewer",
             dependencies: [],
+            resources: [
+                .process("Resources")
+            ],
             swiftSettings: [
                 .unsafeFlags(["-suppress-warnings"])
             ],
