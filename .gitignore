@@ -1,2 +1,12 @@
+/build
 /.build
+/.swiftpm
+/Packages
 /photoviewer_debug.log
+.DS_Store
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+*.xcworkspace/xcuserdata
+*.xcuserdata
+DerivedData/
