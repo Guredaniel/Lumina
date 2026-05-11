@@ -64,6 +64,7 @@ enum AppConstants {
         static let settingsWindowWidth: CGFloat = 400
         static let settingsWindowHeight: CGFloat = 210
         static let photoThumbnailSize = CGSize(width: 150, height: 150)
+        static let previewPlayButtonOffsetY: CGFloat = 20
     }
     
     // MARK: - Messages

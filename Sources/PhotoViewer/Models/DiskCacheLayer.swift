@@ -13,6 +13,7 @@ class DiskCacheLayer {
         // Initialize cache directory
         self.cacheDirectory = DiskCacheLayer.getCacheDirectory()
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        purgeCacheIfNeeded() // Perform an initial purge on app launch
     }
     
     /// Retrieves a cached thumbnail from disk if it exists.
@@ -44,7 +45,7 @@ class DiskCacheLayer {
             try? jpegData.write(to: cachePath, options: .atomic)
         }
         
-        // Only perform the expensive disk scan every 50 writes to improve performance
+        // Perform the disk scan every 50 writes to maintain performance while respecting limits
         writeCounter += 1
         if writeCounter % 50 == 0 {
             purgeCacheIfNeeded()
@@ -75,9 +76,8 @@ class DiskCacheLayer {
             var fileInfos: [(url: URL, size: Int, date: Date)] = []
             
             for resource in resources {
-                if let attributes = try? fileManager.attributesOfItem(atPath: resource.path),
-                   let size = attributes[.size] as? Int,
-                   let date = attributes[.modificationDate] as? Date {
+                let values = try resource.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+                if let size = values.fileSize, let date = values.contentModificationDate {
                     totalSize += size
                     fileInfos.append((resource, size, date))
                 }
@@ -99,7 +99,7 @@ class DiskCacheLayer {
                 }
             }
         } catch {
-            // Silently continue on cache purge errors
+            print("Error purging disk cache: \(error.localizedDescription)") // Log errors for debugging
         }
     }
     

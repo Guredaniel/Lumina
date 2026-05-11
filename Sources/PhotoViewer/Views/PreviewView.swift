@@ -1,15 +1,6 @@
 import SwiftUI
 import AVKit
 
-struct AirPlayView: NSViewRepresentable {
-    func makeNSView(context: Context) -> AVRoutePickerView {
-        let picker = AVRoutePickerView()
-        return picker
-    }
-    
-    func updateNSView(_ nsView: AVRoutePickerView, context: Context) {}
-}
-
 struct LivePhotoPlayerView: NSViewRepresentable {
     let player: AVPlayer
     let showControls: Bool
@@ -161,7 +152,7 @@ struct MediaContentView: View {
                 .buttonStyle(.plain)
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .offset(y: 20)
+                .offset(y: AppConstants.UI.previewPlayButtonOffsetY) // Use a named constant for better maintainability
             }
         }
         .onAppear { loadFullImage() }

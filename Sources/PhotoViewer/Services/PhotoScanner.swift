@@ -61,13 +61,19 @@ class PhotoScanner {
     private func enumerateAndProcessPhotos(in directory: URL) async throws -> [Photo] {
         let fileURLs = try enumerateFiles(in: directory)
         
-        let mediaItems = try await fileURLs.concurrentMap { url in
-            try self.processFileURL(url)
+        let mediaItems = try await fileURLs.concurrentMap { url -> Photo? in
+            do {
+                return try self.processFileURL(url)
+            } catch {
+                print("Warning: Skipping file due to error at \(url.path): \(error.localizedDescription)")
+                return nil
+            }
         }
         
         // Filter out videos that are paired with images (Live Photo videos)
-        let livePhotoVideoPaths = Set(mediaItems.compactMap { $0.videoURL?.path.lowercased() })
-        return mediaItems.filter { item in
+        let compactItems = mediaItems.compactMap { $0 }
+        let livePhotoVideoPaths = Set(compactItems.compactMap { $0.videoURL?.path.lowercased() })
+        return compactItems.filter { item in
             if item.isVideo {
                 return !livePhotoVideoPaths.contains(item.url.path.lowercased())
             }
