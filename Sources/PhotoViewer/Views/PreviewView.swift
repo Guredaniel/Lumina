@@ -31,7 +31,7 @@ struct MediaContentView: View {
     @State private var fullImage: NSImage?
     @State private var isLoading = true
     @State private var player: AVPlayer?
-    @Binding var extractedMetadata: [String: Any]
+    @Binding var extractedMetadata: [String: String]
     @State private var playerItemObserver: NSObjectProtocol?
     @State private var isPlayingLivePhoto = false
     @State private var isVideoReady = false
@@ -41,7 +41,7 @@ struct MediaContentView: View {
     @State private var offset = CGSize.zero
     @State private var lastOffset = CGSize.zero
     
-    init(photo: Photo, viewModel: PhotoViewModel, enableLivePhotos: Bool, livePhotoPlaybackMode: String, extractedMetadata: Binding<[String: Any]>) {
+    init(photo: Photo, viewModel: PhotoViewModel, enableLivePhotos: Bool, livePhotoPlaybackMode: String, extractedMetadata: Binding<[String: String]>) {
         self.photo = photo
         self.viewModel = viewModel
         self.enableLivePhotos = enableLivePhotos
@@ -174,22 +174,32 @@ struct MediaContentView: View {
                 ]
                 
                 guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                    return (NSImage(contentsOf: url), [String: Any]())
+                    return (NSImage(contentsOf: url), [String: String]())
                 }
                 
                 let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
                 let image = cgImage != nil ? NSImage(cgImage: cgImage!, size: .zero) : NSImage(contentsOf: url)
                 
                 // Extract EXIF metadata here on-demand instead of during the main folder scan
-                var metadata: [String: Any] = [:]
+                var metadata: [String: String] = [:]
                 if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
                     if let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] {
-                        metadata["dateTime"] = exif[kCGImagePropertyExifDateTimeOriginal as String]
-                        metadata["cameraMake"] = exif["Make"]
-                        metadata["cameraModel"] = exif["Model"]
+                        if let dateTime = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String {
+                            metadata["dateTime"] = dateTime
+                        }
+                        if let cameraMake = exif["Make"] as? String {
+                            metadata["cameraMake"] = cameraMake
+                        }
+                        if let cameraModel = exif["Model"] as? String {
+                            metadata["cameraModel"] = cameraModel
+                        }
                     }
-                    metadata["width"] = properties[kCGImagePropertyPixelWidth as String]
-                    metadata["height"] = properties[kCGImagePropertyPixelHeight as String]
+                    if let width = properties[kCGImagePropertyPixelWidth as String] as? NSNumber {
+                        metadata["width"] = String(describing: width)
+                    }
+                    if let height = properties[kCGImagePropertyPixelHeight as String] as? NSNumber {
+                        metadata["height"] = String(describing: height)
+                    }
                 }
                 
                 return (image, metadata)
@@ -280,7 +290,7 @@ struct PreviewView: View {
     @State private var showMetadata = false
     @State private var slideDirection: CGFloat = 0
     @State private var isFullscreen = false
-    @State private var extractedMetadata: [String: Any] = [:]
+    @State private var extractedMetadata: [String: String] = [:]
     
     // Hover states for buttons
     @State private var isCloseButtonHovered = false

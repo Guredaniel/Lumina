@@ -1,6 +1,7 @@
 import Foundation
 import ImageIO
 import AppKit
+import UniformTypeIdentifiers
 
 class PhotoScanner {
     static let shared = PhotoScanner()
@@ -94,9 +95,14 @@ class PhotoScanner {
         for case let fileURL as URL in enumerator {
             do {
                 let resourceValues = try fileURL.resourceValues(forKeys: Set(keys))
-                guard resourceValues.isDirectory != true,
-                      let typeIdentifier = resourceValues.typeIdentifier,
-                      isImageType(typeIdentifier) || isVideoType(typeIdentifier) else {
+                guard resourceValues.isDirectory != true else {
+                    continue
+                }
+
+                let typeIdentifier = resourceValues.typeIdentifier
+                let fileExtension = fileURL.pathExtension.lowercased()
+                guard isImageType(typeIdentifier: typeIdentifier, fileExtension: fileExtension)
+                        || isVideoType(typeIdentifier: typeIdentifier, fileExtension: fileExtension) else {
                     continue
                 }
                 supportedFiles.append(fileURL)
@@ -114,11 +120,9 @@ class PhotoScanner {
         let keys: [URLResourceKey] = [.typeIdentifierKey, .contentModificationDateKey, .creationDateKey]
         
         let resourceValues = try fileURL.resourceValues(forKeys: Set(keys))
-        guard let typeIdentifier = resourceValues.typeIdentifier else {
-            throw PhotoViewerError.corruptedMetadata(path: fileURL.path)
-        }
-        
-        let isVideo = isVideoType(typeIdentifier)
+        let typeIdentifier = resourceValues.typeIdentifier
+        let fileExtension = fileURL.pathExtension.lowercased()
+        let isVideo = isVideoType(typeIdentifier: typeIdentifier, fileExtension: fileExtension)
         let date = resourceValues.contentModificationDate ?? resourceValues.creationDate ?? Date.distantPast
         
         var videoURL: URL? = nil
@@ -157,31 +161,31 @@ class PhotoScanner {
     }
     
     /// Extracts basic EXIF metadata from an image file.
-    private func extractMetadata(for imageURL: URL) -> [String: Any] {
+    private func extractMetadata(for imageURL: URL) -> [String: String] {
         guard let source = CGImageSourceCreateWithURL(imageURL as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else {
             return [:]
         }
         
-        var metadata: [String: Any] = [:]
+        var metadata: [String: String] = [:]
         
         // Extract basic properties
-        if let width = properties[kCGImagePropertyPixelWidth as String] {
-            metadata["width"] = width
+        if let width = properties[kCGImagePropertyPixelWidth as String] as? NSNumber {
+            metadata["width"] = String(describing: width)
         }
-        if let height = properties[kCGImagePropertyPixelHeight as String] {
-            metadata["height"] = height
+        if let height = properties[kCGImagePropertyPixelHeight as String] as? NSNumber {
+            metadata["height"] = String(describing: height)
         }
         
         // Extract EXIF data
         if let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] {
-            if let dateTime = exif[kCGImagePropertyExifDateTimeOriginal as String] {
+            if let dateTime = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String {
                 metadata["dateTime"] = dateTime
             }
-            if let make = exif["Make"] {
+            if let make = exif["Make"] as? String {
                 metadata["cameraMake"] = make
             }
-            if let model = exif["Model"] {
+            if let model = exif["Model"] as? String {
                 metadata["cameraModel"] = model
             }
         }
@@ -191,21 +195,43 @@ class PhotoScanner {
     
     // MARK: - File Type Detection
     
-    private func isImageType(_ typeIdentifier: String) -> Bool {
-        let imageTypes = [
-            "public.heic", "public.heif", "public.jpeg", "public.png",
-            "public.tiff", "public.gif", "public.webp",
-            "com.apple.jpeg", "com.apple.heic", "com.compuserve.gif"
-        ]
-        return imageTypes.contains(typeIdentifier) || typeIdentifier.contains("image")
+    private func isImageType(typeIdentifier: String?, fileExtension: String) -> Bool {
+        let supportedExtensions = Set(AppConstants.SupportedFormats.imageExtensions)
+        let supportedTypes = Set(AppConstants.SupportedFormats.imageUTTypes.map { $0.lowercased() })
+
+        if supportedExtensions.contains(fileExtension) {
+            return true
+        }
+
+        if let typeIdentifier = typeIdentifier?.lowercased() {
+            if supportedTypes.contains(typeIdentifier) {
+                return true
+            }
+            return typeIdentifier.contains("image")
+        }
+
+        return false
     }
     
-    private func isVideoType(_ typeIdentifier: String) -> Bool {
-        let videoTypes = [
+    private func isVideoType(typeIdentifier: String?, fileExtension: String) -> Bool {
+        let supportedExtensions = Set(AppConstants.SupportedFormats.videoExtensions)
+        let supportedTypes = [
             "public.mpeg-4", "com.apple.quicktime-movie", "public.avi",
             "public.mpeg", "public.movie"
         ]
-        return videoTypes.contains(typeIdentifier) || typeIdentifier.contains("video")
+
+        if supportedExtensions.contains(fileExtension) {
+            return true
+        }
+
+        if let typeIdentifier = typeIdentifier?.lowercased() {
+            if supportedTypes.contains(typeIdentifier) {
+                return true
+            }
+            return typeIdentifier.contains("video")
+        }
+
+        return false
     }
     
     // MARK: - Photo Grouping

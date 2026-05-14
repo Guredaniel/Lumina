@@ -5,15 +5,15 @@ struct Photo: Identifiable, Sendable, Codable {
     let url: URL
     let date: Date
     let filename: String
-    var exifMetadata: [String: Any] = [:]
+    var exifMetadata: [String: String] = [:]
     var videoURL: URL? = nil
     var isVideo: Bool = false
     
     enum CodingKeys: String, CodingKey {
-        case url, date, filename, videoURL, isVideo
+        case url, date, filename, exifMetadata, videoURL, isVideo
     }
     
-    init(url: URL, date: Date, exifMetadata: [String: Any] = [:], videoURL: URL? = nil, isVideo: Bool = false) {
+    init(url: URL, date: Date, exifMetadata: [String: String] = [:], videoURL: URL? = nil, isVideo: Bool = false) {
         self.url = url
         self.date = date
         self.filename = url.lastPathComponent
@@ -27,9 +27,9 @@ struct Photo: Identifiable, Sendable, Codable {
         self.url = try container.decode(URL.self, forKey: .url)
         self.date = try container.decode(Date.self, forKey: .date)
         self.filename = try container.decode(String.self, forKey: .filename)
+        self.exifMetadata = try container.decodeIfPresent([String: String].self, forKey: .exifMetadata) ?? [:]
         self.videoURL = try container.decodeIfPresent(URL.self, forKey: .videoURL)
         self.isVideo = try container.decode(Bool.self, forKey: .isVideo)
-        self.exifMetadata = [:]
     }
     
     func encode(to encoder: Encoder) throws {
@@ -37,6 +37,7 @@ struct Photo: Identifiable, Sendable, Codable {
         try container.encode(url, forKey: .url)
         try container.encode(date, forKey: .date)
         try container.encode(filename, forKey: .filename)
+        try container.encode(exifMetadata, forKey: .exifMetadata)
         try container.encodeIfPresent(videoURL, forKey: .videoURL)
         try container.encode(isVideo, forKey: .isVideo)
     }
