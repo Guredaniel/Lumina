@@ -212,7 +212,7 @@ struct MediaContentView: View {
                 self.isLoading = false
                 
                 // Handle Video/Live Photo setup
-                setupPlayer()
+                self.setupPlayer()
             }
         }
     }
@@ -226,16 +226,14 @@ struct MediaContentView: View {
             let newPlayer = AVPlayer(url: playURL)
             newPlayer.isMuted = !self.photo.isVideo
             
+            // Capture only the values we need in the closure to avoid keeping the entire view alive
+            let livePhotoPlaybackMode = self.livePhotoPlaybackMode
+            let isVideo = self.photo.isVideo
+            
             self.playerItemObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: newPlayer.currentItem, queue: .main) { _ in
-                if self.livePhotoPlaybackMode == "loop" || self.photo.isVideo {
+                if livePhotoPlaybackMode == "loop" || isVideo {
                     newPlayer.seek(to: .zero)
                     newPlayer.play()
-                } else {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        self.isVideoReady = false
-                        self.isPlayingLivePhoto = false
-                    }
-                    newPlayer.seek(to: .zero)
                 }
             }
             self.player = newPlayer

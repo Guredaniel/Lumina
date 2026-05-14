@@ -58,14 +58,10 @@ if [ -x "$BUILD_PATH" ]; then
         -e "s/\$(PRODUCT_NAME)/PhotoViewer/g" \
         Info.plist > "${APP_BUNDLE_PATH}/Contents/Info.plist"
     
-    # Copy icon files to Resources
-    if [ -f "icon.png" ]; then
-        cp icon.png "${APP_BUNDLE_PATH}/Contents/Resources/"
+    # Copy icon file to Resources
+    if [ -f "Sources/PhotoViewer/Resources/icon.icns" ]; then
+        cp Sources/PhotoViewer/Resources/icon.icns "${APP_BUNDLE_PATH}/Contents/Resources/"
         echo "✅ Icon copied to app bundle"
-    fi
-    
-    if [ -f "icon.svg" ]; then
-        cp icon.svg "${APP_BUNDLE_PATH}/Contents/Resources/"
     fi
         
     echo "✅ App bundle created successfully at ${APP_BUNDLE_PATH}"

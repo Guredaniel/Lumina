@@ -107,21 +107,27 @@ class PhotoViewModel: ObservableObject {
         Task {
             do {
                 let months = try await PhotoScanner.shared.scanDirectories(selectedDirectories)
-                self.photoMonths = months
-                self.updateDerivedData()
-                self.saveCachedPhotoMonths()
-                self.startBackgroundThumbnailCaching()
-                self.isLoading = false
-                self.isScanning = false
-                
-                if months.isEmpty {
-                    self.errorMessage = AppConstants.Messages.noPhotosFound
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    self.photoMonths = months
+                    self.updateDerivedData()
+                    self.saveCachedPhotoMonths()
+                    self.startBackgroundThumbnailCaching()
+                    self.isLoading = false
+                    self.isScanning = false
+                    
+                    if months.isEmpty {
+                        self.errorMessage = AppConstants.Messages.noPhotosFound
+                    }
                 }
             } catch {
-                self.isLoading = false
-                self.isScanning = false
-                let photoError = error as? PhotoViewerError ?? .scanFailed(reason: error.localizedDescription)
-                self.errorMessage = photoError.errorDescription
+                await MainActor.run { [weak self] in
+                    guard let self = self else { return }
+                    self.isLoading = false
+                    self.isScanning = false
+                    let photoError = error as? PhotoViewerError ?? .scanFailed(reason: error.localizedDescription)
+                    self.errorMessage = photoError.errorDescription
+                }
             }
         }
     }
@@ -132,9 +138,9 @@ class PhotoViewModel: ObservableObject {
         preCachingTask?.cancel()
         let photos = allPhotosFlat
         
-        preCachingTask = Task(priority: .background) {
+        preCachingTask = Task(priority: .background) { [weak self] in
             for photo in photos {
-                if Task.isCancelled { break }
+                guard let self = self, !Task.isCancelled else { break }
                 
                 // generateThumbnail internally checks if it's already cached
                 _ = try? await ThumbnailService.shared.generateThumbnail(for: photo.url)

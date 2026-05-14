@@ -52,6 +52,7 @@ struct PhotoThumbnailView: View {
     @State private var thumbnail: NSImage?
     @State private var isHovered = false
     @State private var loadError: Bool = false
+    @State private var loadingTask: Task<Void, Never>?
     
     init(photo: Photo, viewModel: PhotoViewModel) {
         self.photo = photo
@@ -130,7 +131,7 @@ struct PhotoThumbnailView: View {
             }
             .onAppear {
                 if thumbnail == nil {
-                    Task {
+                    loadingTask = Task {
                         do {
                             let generatedThumbnail = try await ThumbnailService.shared.generateThumbnail(
                                 for: photo.url,
@@ -146,6 +147,9 @@ struct PhotoThumbnailView: View {
                         }
                     }
                 }
+            }
+            .onDisappear {
+                loadingTask?.cancel()
             }
             .draggable(photo.url)
             .contextMenu {

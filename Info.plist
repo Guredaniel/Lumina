@@ -22,8 +22,6 @@
     <string>2</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
-    <key>NSMainStoryboardFile</key>
-    <string>Main</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>CFBundleIconFile</key>
