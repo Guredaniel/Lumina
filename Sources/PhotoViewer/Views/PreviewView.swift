@@ -155,8 +155,19 @@ struct MediaContentView: View {
                 .offset(y: AppConstants.UI.previewPlayButtonOffsetY) // Use a named constant for better maintainability
             }
         }
-        .onAppear { loadFullImage() }
-        .onDisappear { resetPlayerState() }
+        .onAppear { 
+            loadFullImage()
+        }
+        .onDisappear { 
+            resetPlayerState() 
+        }
+        .onChange(of: photo) { newPhoto in
+            // Reset zoom and metadata when photo changes
+            totalZoom = 1.0
+            currentZoom = 0
+            offset = .zero
+            lastOffset = .zero
+        }
     }
     
     private func loadFullImage() {
@@ -291,6 +302,9 @@ struct PreviewView: View {
     @State private var slideDirection: CGFloat = 0
     @State private var isFullscreen = false
     @State private var extractedMetadata: [String: String] = [:]
+    @State private var preloadedImages: [URL: NSImage] = [:]
+    @State private var navigationQueue: [Photo] = []
+    @State private var isNavigating = false
     
     // Hover states for buttons
     @State private var isCloseButtonHovered = false
@@ -507,21 +521,94 @@ struct PreviewView: View {
     
     private func goToPreviousPhoto() {
         if let previous = viewModel.previousPhoto(before: currentPhoto) {
-            slideDirection = -1
-            // Tightened response from 0.22 to 0.18 for snappier feel
-            withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
-                currentPhoto = previous
-            }
+            navigateToPhoto(previous, direction: -1)
         }
     }
     
     private func goToNextPhoto() {
         if let next = viewModel.nextPhoto(after: currentPhoto) {
-            slideDirection = 1
-            withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
-                currentPhoto = next
+            navigateToPhoto(next, direction: 1)
+        }
+    }
+    
+    private func navigateToPhoto(_ photo: Photo, direction: CGFloat) {
+        guard !isNavigating else { return }
+        isNavigating = true
+        slideDirection = direction
+        
+        // Ultra-snappy animation: 0.12s response, 0.95 damping for instant feel
+        withAnimation(.spring(response: 0.12, dampingFraction: 0.95)) {
+            currentPhoto = photo
+        }
+        
+        // Preload adjacent photos immediately after navigation
+        Task {
+            preloadAdjacentPhotos()
+            // Minimal delay before allowing next navigation
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+            isNavigating = false
+        }
+    }
+    
+    private func preloadAdjacentPhotos() {
+        // Preload next and previous photos in background for instant display
+        if let next = viewModel.nextPhoto(after: currentPhoto) {
+            Task(priority: .userInitiated) {
+                let image = await preloadImage(next.url)
+                if let image = image {
+                    preloadedImages[next.url] = image
+                }
             }
         }
+        
+        if let previous = viewModel.previousPhoto(before: currentPhoto) {
+            Task(priority: .userInitiated) {
+                let image = await preloadImage(previous.url)
+                if let image = image {
+                    preloadedImages[previous.url] = image
+                }
+            }
+        }
+    }
+    
+    private func preloadImage(_ url: URL) async -> NSImage? {
+        // Return cached image if available
+        if let cached = preloadedImages[url] {
+            return cached
+        }
+        
+        // Quick load: try cached thumbnail first, then full image with timeout
+        if let thumb = ThumbnailCache.shared.thumbnail(for: url) {
+            return thumb
+        }
+        
+        let imageTask = Task.detached(priority: .userInitiated) { () -> NSImage? in
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 2048
+            ]
+            
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+                return NSImage(contentsOf: url)
+            }
+            
+            if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+                return NSImage(cgImage: cgImage, size: .zero)
+            }
+            
+            return NSImage(contentsOf: url)
+        }
+        
+        // 5 second timeout for preload
+        let timeoutTask = Task {
+            try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
+            imageTask.cancel()
+        }
+        
+        let result = try? await imageTask.value
+        timeoutTask.cancel()
+        return result
     }
     
     private func showInFinder() {

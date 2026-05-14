@@ -1,9 +1,12 @@
 import AppKit
 import ImageIO
 import AVFoundation
+import os
 
 class ThumbnailService {
     static let shared = ThumbnailService()
+    
+    private let logger = Logger(subsystem: "com.photoviewer", category: "ThumbnailService")
     
     // MARK: - Thumbnail Generation
     
@@ -26,7 +29,7 @@ class ThumbnailService {
             let isVideo = AppConstants.SupportedFormats.videoExtensions.contains(photo.pathExtension.lowercased())
             
             if isVideo {
-                image = self.generateVideoThumbnail(for: photo, size: size)
+                image = self.generateVideoThumbnail(for: photo, size: size, scale: scale)
             } else {
                 image = self.generateImageThumbnail(for: photo, size: size, scale: scale)
             }
@@ -61,20 +64,53 @@ class ThumbnailService {
         return loadImageFallback(photo, size: size)
     }
     
-    /// Generates a thumbnail from a video file using AVAssetImageGenerator.
-    private func generateVideoThumbnail(for url: URL, size: CGSize) -> NSImage? {
+    /// Generates a thumbnail from a video file using AVAssetImageGenerator with robust error handling.
+    /// Tries multiple seek times and includes validation and logging for edge cases.
+    private func generateVideoThumbnail(for url: URL, size: CGSize, scale: CGFloat) -> NSImage? {
         let asset = AVAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: size.width * 2, height: size.height * 2)
         
-        do {
-            let cgImage = try generator.copyCGImage(at: AppConstants.VideoThumbnail.seekTime, actualTime: nil)
-            return NSImage(cgImage: cgImage, size: size)
-        } catch {
-            // Video thumbnail generation failed
+        // Validate the asset is readable and has video tracks
+        guard asset.tracks(withMediaType: .video).count > 0 else {
+            logger.warning("Video has no video tracks: \(url.lastPathComponent)")
             return nil
         }
+        
+        // Get video duration to intelligently pick a seek time
+        let duration = asset.duration.seconds
+        guard duration.isFinite && duration > 0 else {
+            logger.warning("Video has invalid duration: \(url.lastPathComponent), duration: \(duration)")
+            return nil
+        }
+        
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: size.width * scale * 2, height: size.height * scale * 2)
+        
+        // Try multiple seek times: 10% in, 25% in, 1 second, or 3 seconds (intelligent for short/long videos)
+        let seekTimes: [CMTime] = [
+            CMTime(seconds: min(duration * 0.1, 3.0), preferredTimescale: 1),
+            CMTime(seconds: min(duration * 0.25, 5.0), preferredTimescale: 1),
+            CMTime(seconds: min(1.0, duration * 0.5), preferredTimescale: 1),
+            CMTime(seconds: min(3.0, duration * 0.8), preferredTimescale: 1)
+        ]
+        
+        for seekTime in seekTimes {
+            do {
+                let cgImage = try generator.copyCGImage(at: seekTime, actualTime: nil)
+                let pointSize = CGSize(width: CGFloat(cgImage.width) / scale, height: CGFloat(cgImage.height) / scale)
+                let thumbnail = NSImage(cgImage: cgImage, size: pointSize)
+                logger.debug("Generated video thumbnail at \(seekTime.seconds)s for \(url.lastPathComponent)")
+                return thumbnail
+            } catch {
+                // Log but continue to next seek time
+                logger.debug("Seek time \(seekTime.seconds)s failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                continue
+            }
+        }
+        
+        // All seek times failed
+        logger.error("Failed to generate video thumbnail for \(url.lastPathComponent) after trying \(seekTimes.count) seek times")
+        return nil
     }
     
     /// Fallback method for loading images that don't decode with CGImageSource.
