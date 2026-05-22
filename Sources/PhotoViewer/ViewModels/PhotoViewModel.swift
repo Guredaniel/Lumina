@@ -161,14 +161,22 @@ class PhotoViewModel: ObservableObject {
     }
     
     private func loadCachedPhotoMonths() {
-        guard let data = try? Data(contentsOf: photoCacheURL) else { return }
-        guard let cachedMonths = try? JSONDecoder().decode([PhotoMonth].self, from: data) else { return }
-        self.photoMonths = filterCachedPhotoMonths(cachedMonths)
+        do {
+            let data = try Data(contentsOf: photoCacheURL)
+            let cachedMonths = try JSONDecoder().decode([PhotoMonth].self, from: data)
+            self.photoMonths = filterCachedPhotoMonths(cachedMonths)
+        } catch {
+            print("PhotoViewModel: failed to load cached photo months: \(error)")
+        }
     }
     
     private func saveCachedPhotoMonths() {
-        guard let data = try? JSONEncoder().encode(photoMonths) else { return }
-        try? data.write(to: photoCacheURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(photoMonths)
+            try data.write(to: photoCacheURL, options: .atomic)
+        } catch {
+            print("PhotoViewModel: failed to save cached photo months: \(error)")
+        }
     }
     
     private func filterCachedPhotoMonths(_ months: [PhotoMonth]) -> [PhotoMonth] {
@@ -188,6 +196,11 @@ class PhotoViewModel: ObservableObject {
     
     func getPhotosInMonth(_ month: PhotoMonth) -> [Photo] {
         return month.photos
+    }
+    
+    func photoMonth(withID id: String) -> PhotoMonth? {
+        return photoMonths.first(where: { $0.id == id })
+            ?? groupedYears.values.flatMap { $0 }.first(where: { $0.id == id })
     }
     
     func nextPhoto(after photo: Photo) -> Photo? {

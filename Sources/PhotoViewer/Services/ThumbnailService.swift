@@ -19,9 +19,7 @@ class ThumbnailService {
         }
         
         // Generate thumbnail on a background thread
-        return try await Task.detached(priority: .userInitiated) { [weak self] () -> NSImage? in
-            guard let self = self else { return nil }
-            
+        return try await Task.detached(priority: .userInitiated) { [self] () -> NSImage? in
             let scale = NSScreen.main?.backingScaleFactor ?? 2.0
             var image: NSImage? = nil
             

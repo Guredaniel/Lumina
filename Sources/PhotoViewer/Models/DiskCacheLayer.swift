@@ -7,6 +7,7 @@ class DiskCacheLayer {
     private let cacheDirectory: URL
     private let maxCacheSizeBytes: Int = AppConstants.Thumbnail.diskCacheSizeLimit
     private let fileManager = FileManager.default
+    private let cacheQueue = DispatchQueue(label: "com.photoviewer.diskCache", qos: .background)
     private var writeCounter = 0
     
     init() {
@@ -27,8 +28,7 @@ class DiskCacheLayer {
     
     /// Stores a thumbnail to disk cache asynchronously.
     func cacheThumbnail(_ image: NSImage, forKey key: String) {
-        // Save to disk on background thread to avoid blocking UI
-        Task.detached(priority: .background) { [weak self] in
+        cacheQueue.async { [weak self] in
             self?.saveThumbnailToDisk(image, forKey: key)
         }
     }

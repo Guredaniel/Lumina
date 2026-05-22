@@ -35,6 +35,7 @@ struct MediaContentView: View {
     @State private var playerItemObserver: NSObjectProtocol?
     @State private var isPlayingLivePhoto = false
     @State private var isVideoReady = false
+    @State private var imageLoadTask: Task<Void, Never>? = nil
     
     @State private var currentZoom = 0.0
     @State private var totalZoom = 1.0
@@ -155,11 +156,13 @@ struct MediaContentView: View {
                 .offset(y: AppConstants.UI.previewPlayButtonOffsetY) // Use a named constant for better maintainability
             }
         }
-        .onAppear { 
+        .onAppear {
             loadFullImage()
         }
-        .onDisappear { 
-            resetPlayerState() 
+        .onDisappear {
+            imageLoadTask?.cancel()
+            imageLoadTask = nil
+            resetPlayerState()
         }
         .onChange(of: photo) { newPhoto in
             // Reset zoom and metadata when photo changes
@@ -172,10 +175,9 @@ struct MediaContentView: View {
     
     private func loadFullImage() {
         isLoading = true
-        let url = photo.url
-        
-        // Use a high-priority Task to jump ahead of background scanning tasks
-        Task(priority: .userInitiated) {
+        imageLoadTask?.cancel()
+        imageLoadTask = Task(priority: .userInitiated) { [photo] in
+            let url = photo.url
             let imageTask = Task.detached(priority: .userInitiated) {
                 // Using CGImageSource is significantly faster for large files than NSImage(contentsOf:)
                 let options: [CFString: Any] = [
@@ -225,6 +227,7 @@ struct MediaContentView: View {
             let result = try? await imageTask.value
             timeoutTask.cancel() // Cancel timeout if task completed
             
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 if let result = result, let image = result.0 {
                     self.fullImage = image

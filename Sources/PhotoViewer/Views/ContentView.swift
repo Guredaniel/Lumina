@@ -121,8 +121,10 @@ struct ContentView: View {
                             }
                         }
                     case .month(let id):
-                        if let month = viewModel.photoMonths.first(where: { $0.id == id }) {
+                        if let month = viewModel.photoMonth(withID: id) {
                             PhotoGridView(month: month, viewModel: viewModel)
+                        } else {
+                            errorView(message: "No photos were found for the selected month.")
                         }
                     }
                 }
@@ -140,7 +142,7 @@ struct ContentView: View {
         case .year(let year):
             return "Photos from \(year)"
         case .month(let id):
-            return viewModel.photoMonths.first(where: { $0.id == id })?.monthYearString ?? "Photos"
+            return viewModel.photoMonth(withID: id)?.monthYearString ?? "Photos"
         }
     }
     
