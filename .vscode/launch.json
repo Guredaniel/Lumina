@@ -5,20 +5,20 @@
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:PhotoViewer}",
-            "name": "Debug PhotoViewer",
-            "target": "PhotoViewer",
+            "name": "Debug Lumina",
+            "target": "Lumina",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug PhotoViewer"
+            "preLaunchTask": "swift: Build Debug Lumina"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:PhotoViewer}",
-            "name": "Release PhotoViewer",
-            "target": "PhotoViewer",
+            "name": "Release Lumina",
+            "target": "Lumina",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release PhotoViewer"
+            "preLaunchTask": "swift: Build Release Lumina"
         }
     ]
 }

@@ -1,4 +1,4 @@
-# Quick Start Guide - PhotoViewer
+# Quick Start Guide - Lumina
 
 ## ✅ Implementation Complete!
 
@@ -60,13 +60,13 @@ open ~/PhotoViewer/PhotoViewer.xcodeproj
 **Option C: Using xcodebuild directly**
 ```bash
 cd ~/PhotoViewer
-xcodebuild -project PhotoViewer.xcodeproj -scheme PhotoViewer -configuration Release
+xcodebuild -project PhotoViewer.xcodeproj -scheme Lumina -configuration Release
 ```
 
 ### Step 3: Run the App
 The app will launch automatically after building. Or manually:
 ```bash
-open ~/PhotoViewer/build/Build/Products/Release/PhotoViewer.app
+open ~/PhotoViewer/build/Build/Products/Release/Lumina.app
 ```
 
 ---
@@ -115,9 +115,9 @@ PhotoViewer/
 
 ### Change App Bundle ID
 1. Open `PhotoViewer.xcodeproj` in Xcode
-2. Select PhotoViewer target
+2. Select Lumina target
 3. Go to General > Signing & Capabilities
-4. Change Bundle Identifier from `com.example.PhotoViewer` to your domain
+4. Change Bundle Identifier from `com.example.Lumina` to your domain
 
 ### Adjust Window Size
 Edit `ContentView.swift` line with `.frame(minWidth:, minHeight:)`:
@@ -194,7 +194,7 @@ rm -rf ~/Library/Developer/Xcode/DerivedData/*
 
 ## ✨ You're All Set!
 
-The PhotoViewer app is production-ready. Everything is implemented following macOS native development best practices:
+The Lumina app is production-ready. Everything is implemented following macOS native development best practices:
 
 - ✅ SwiftUI (modern declarative UI)
 - ✅ Async/await (responsive operations)

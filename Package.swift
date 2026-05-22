@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "PhotoViewer",
+    name: "Lumina",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "PhotoViewer", targets: ["PhotoViewer"])
+        .executable(name: "Lumina", targets: ["PhotoViewer"])
     ],
     dependencies: [],
     targets: [

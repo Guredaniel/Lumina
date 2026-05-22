@@ -11,9 +11,9 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>PhotoViewer</string>
+    <string>Lumina</string>
     <key>CFBundleDisplayName</key>
-    <string>PhotoViewer</string>
+    <string>Lumina</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -29,7 +29,7 @@
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 PhotoViewer. All rights reserved.</string>
+    <string>Copyright © 2026 Lumina. All rights reserved.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>

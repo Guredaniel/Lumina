@@ -1,4 +1,4 @@
-# PhotoViewer - Native macOS Photo Browser
+# Lumina - Native macOS Photo Browser
 
 A native macOS app built with SwiftUI that displays photos organized by month with quick previews and metadata.
 
@@ -28,7 +28,7 @@ A native macOS app built with SwiftUI that displays photos organized by month wi
    ```
 
 2. **Select the Target:**
-   - Ensure "PhotoViewer" is selected as the active scheme in the top toolbar
+   - Ensure "Lumina" is selected as the active scheme in the top toolbar
 
 3. **Build:**
    - Press `Cmd + B` or go to `Product > Build`
@@ -42,10 +42,10 @@ A native macOS app built with SwiftUI that displays photos organized by month wi
 cd ~/PhotoViewer
 
 # Build the app
-xcodebuild -project PhotoViewer.xcodeproj -scheme PhotoViewer -configuration Release
+xcodebuild -project PhotoViewer.xcodeproj -scheme Lumina -configuration Release
 
 # Run the app
-open ./build/Release/PhotoViewer.app
+open ./build/Release/Lumina.app
 ```
 
 ### Option 3: Build with Swift Package Manager
@@ -57,7 +57,7 @@ cd ~/PhotoViewer
 swift build -c release
 
 # Run
-./.build/release/PhotoViewer
+./.build/release/Lumina
 ```
 
 ## Project Structure
@@ -148,13 +148,13 @@ To create a signed and notarized app for distribution:
 
 ```bash
 # Build with release configuration
-xcodebuild -project PhotoViewer.xcodeproj -scheme PhotoViewer -configuration Release -derivedDataPath build
+xcodebuild -project PhotoViewer.xcodeproj -scheme Lumina -configuration Release -derivedDataPath build
 
 # Sign the app (requires Developer ID)
-codesign --deep --force --verify --verbose --sign "Developer ID Application" ./build/Release/PhotoViewer.app
+codesign --deep --force --verify --verbose --sign "Developer ID Application" ./build/Release/Lumina.app
 
 # Create DMG for distribution
-hdiutil create -volname PhotoViewer -srcfolder ./build/Release/PhotoViewer.app -ov -format UDZO PhotoViewer.dmg
+hdiutil create -volname Lumina -srcfolder ./build/Release/Lumina.app -ov -format UDZO Lumina.dmg
 ```
 
 ## Development Notes

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# PhotoViewer Build Script
+# Lumina Build Script
 # Usage: ./build.sh [debug|release]
 
 set -e
@@ -19,7 +19,7 @@ fi
 # Convert to title case for display (optional)
 BUILD_CONFIG_DISPLAY="$(tr '[:lower:]' '[:upper:]' <<< ${BUILD_CONFIG:0:1})${BUILD_CONFIG:1}"
 
-echo "Building PhotoViewer ($BUILD_CONFIG_DISPLAY)..."
+echo "Building Lumina ($BUILD_CONFIG_DISPLAY)..."
 
 # Check if swift is available
 if ! command -v swift &> /dev/null; then
@@ -32,9 +32,9 @@ fi
 echo "Building with Swift Package Manager..."
 swift build --configuration "$BUILD_CONFIG"
 
-BUILD_PATH=".build/apple/Products/$BUILD_CONFIG_DISPLAY/PhotoViewer"
+BUILD_PATH=".build/apple/Products/$BUILD_CONFIG_DISPLAY/Lumina"
 if [ ! -x "$BUILD_PATH" ]; then
-    BUILD_PATH=".build/$BUILD_CONFIG/PhotoViewer"
+    BUILD_PATH=".build/$BUILD_CONFIG/Lumina"
 fi
 
 if [ -x "$BUILD_PATH" ]; then
@@ -42,7 +42,7 @@ if [ -x "$BUILD_PATH" ]; then
     echo "Binary location: $BUILD_PATH"
     
     # Create the .app bundle
-    APP_BUNDLE_NAME="PhotoViewer.app"
+    APP_BUNDLE_NAME="Lumina.app"
     APP_BUNDLE_PATH="build/${APP_BUNDLE_NAME}"
     echo "Creating macOS App Bundle at ${APP_BUNDLE_PATH}..."
     
@@ -53,9 +53,9 @@ if [ -x "$BUILD_PATH" ]; then
     cp "$BUILD_PATH" "${APP_BUNDLE_PATH}/Contents/MacOS/"
     
     # Copy Info.plist and resolve variables
-    sed -e "s/\$(EXECUTABLE_NAME)/PhotoViewer/g" \
-        -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.example.PhotoViewer/g" \
-        -e "s/\$(PRODUCT_NAME)/PhotoViewer/g" \
+    sed -e "s/\$(EXECUTABLE_NAME)/Lumina/g" \
+        -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.example.Lumina/g" \
+        -e "s/\$(PRODUCT_NAME)/Lumina/g" \
         Info.plist > "${APP_BUNDLE_PATH}/Contents/Info.plist"
     
     # Copy icon file to Resources
@@ -68,7 +68,7 @@ if [ -x "$BUILD_PATH" ]; then
     
     # Auto-run for release, prompt for debug
     if [ "$BUILD_CONFIG" = "release" ]; then
-        echo "Launching PhotoViewer in release mode..."
+        echo "Launching Lumina in release mode..."
         open "${APP_BUNDLE_PATH}"
     else
         read -p "Run the app now? (y/n) " -n 1 -r

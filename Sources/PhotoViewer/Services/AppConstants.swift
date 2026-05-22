@@ -37,7 +37,8 @@ enum AppConstants {
     
     // MARK: - Grid Display Configuration
     enum GridDisplay {
-        static let defaultColumns = 4
+        // 0 means adaptive/auto columns (use .adaptive GridItem)
+        static let defaultColumns = 0
         static let minColumnWidth: CGFloat = 150
         static let gridSpacing: CGFloat = 12
         static let gridPadding: CGFloat = 16
