@@ -32,7 +32,6 @@ struct MediaContentView: View {
     @State private var isLoading = true
     @State private var player: AVPlayer?
     @Binding var extractedMetadata: [String: String]
-    @State private var playerItemObserver: NSObjectProtocol?
     @State private var isPlayingLivePhoto = false
     @State private var isVideoReady = false
     @State private var imageLoadTask: Task<Void, Never>? = nil
@@ -68,9 +67,13 @@ struct MediaContentView: View {
                     LivePhotoPlayerView(player: player, showControls: photo.isVideo)
                         .opacity(isVideoReady ? 1 : 0)
                         .onReceive(player.publisher(for: \.timeControlStatus)) { status in
-                            if status == .playing && !isVideoReady {
-                                withAnimation(.easeIn(duration: 0.3)) {
+                            if status == .playing {
+                                withAnimation(.easeInOut(duration: 0.4)) {
                                     isVideoReady = true
+                                }
+                            } else if (status == .paused || status == .waitingToPlayAtSpecifiedRate) {
+                                withAnimation(.easeInOut(duration: 0.5)) {
+                                    isVideoReady = photo.isVideo
                                 }
                             }
                         }
@@ -154,6 +157,22 @@ struct MediaContentView: View {
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .offset(y: AppConstants.UI.previewPlayButtonOffsetY) // Use a named constant for better maintainability
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
+            guard let item = notification.object as? AVPlayerItem,
+                  item == player?.currentItem else { return }
+            
+            if livePhotoPlaybackMode == "loop" || photo.isVideo {
+                player?.seek(to: .zero)
+                player?.play()
+            } else if livePhotoPlaybackMode == "once" && !photo.isVideo {
+                // Transition back to the static photo smoothly without jumping frames
+                withAnimation(.easeOut(duration: 0.6)) {
+                    isPlayingLivePhoto = false
+                    isVideoReady = false
+                }
+                player?.pause()
             }
         }
         .onAppear {
@@ -249,17 +268,6 @@ struct MediaContentView: View {
             let playURL = self.photo.isVideo ? self.photo.url : self.photo.videoURL!
             let newPlayer = AVPlayer(url: playURL)
             newPlayer.isMuted = !self.photo.isVideo
-            
-            // Capture only the values we need in the closure to avoid keeping the entire view alive
-            let livePhotoPlaybackMode = self.livePhotoPlaybackMode
-            let isVideo = self.photo.isVideo
-            
-            self.playerItemObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: newPlayer.currentItem, queue: .main) { _ in
-                if livePhotoPlaybackMode == "loop" || isVideo {
-                    newPlayer.seek(to: .zero)
-                    newPlayer.play()
-                }
-            }
             self.player = newPlayer
             self.isPlayingLivePhoto = true
             self.player?.play()
@@ -269,15 +277,27 @@ struct MediaContentView: View {
     private func resetPlayerState() {
         player?.pause()
         player = nil
-        if let observer = playerItemObserver {
-            NotificationCenter.default.removeObserver(observer)
-            playerItemObserver = nil
-        }
     }
     
     private func toggleLivePhoto() {
-        isPlayingLivePhoto.toggle()
-        isPlayingLivePhoto ? player?.play() : player?.pause()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isPlayingLivePhoto.toggle()
+        }
+        
+        if isPlayingLivePhoto {
+            // If the player is at the end of the item, seek back to zero before playing
+            if let player = player,
+               let item = player.currentItem,
+               player.currentTime() >= item.duration {
+                player.seek(to: .zero) { _ in
+                    player.play()
+                }
+            } else {
+                player?.play()
+            }
+        } else {
+            player?.pause()
+        }
     }
     
     private func copyPhotoToPasteboard() {

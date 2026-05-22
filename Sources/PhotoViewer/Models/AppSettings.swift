@@ -55,7 +55,8 @@ class AppSettings: ObservableObject {
         self.gridColumns = defaults.object(forKey: AppConstants.UserDefaultsKeys.gridColumns) as? Int ?? AppConstants.GridDisplay.defaultColumns
         self.showFilenames = defaults.bool(forKey: AppConstants.UserDefaultsKeys.showFilenames)
         self.enableLivePhotos = defaults.object(forKey: AppConstants.UserDefaultsKeys.enableLivePhotos) as? Bool ?? true
-        self.livePhotoPlaybackMode = defaults.string(forKey: AppConstants.UserDefaultsKeys.livePhotoPlaybackMode) ?? "loop"
+        // Default live photo playback to play once for a less intrusive UX
+        self.livePhotoPlaybackMode = defaults.string(forKey: AppConstants.UserDefaultsKeys.livePhotoPlaybackMode) ?? "once"
     }
     
     // MARK: - Reset to Defaults
@@ -63,6 +64,6 @@ class AppSettings: ObservableObject {
         gridColumns = AppConstants.GridDisplay.defaultColumns
         showFilenames = false
         enableLivePhotos = true
-        livePhotoPlaybackMode = "loop"
+        livePhotoPlaybackMode = "once"
     }
 }
