@@ -1,6 +1,65 @@
 import SwiftUI
 import AVKit
 
+struct ScrollGestureView: NSViewRepresentable {
+    var onScroll: (CGFloat, CGPoint) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = ScrollNSView()
+        view.onScroll = onScroll
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    class ScrollNSView: NSView {
+        var onScroll: ((CGFloat, CGPoint) -> Void)?
+
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil {
+                setupMonitor()
+            } else {
+                removeMonitor()
+            }
+        }
+
+        private func setupMonitor() {
+            removeMonitor()
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel]) { [weak self] event in
+                guard let self = self, let window = self.window else { return event }
+                
+                let mouseLocation = window.mouseLocationOutsideOfEventStream
+                let localPoint = self.convert(mouseLocation, from: nil)
+                
+                if self.bounds.contains(localPoint) {
+                    self.onScroll?(event.scrollingDeltaY, localPoint)
+                    return nil // Consume event to prevent double-scrolling if in a list
+                }
+                return event
+            }
+        }
+
+        private func removeMonitor() {
+            if let monitor = monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        deinit {
+            removeMonitor()
+        }
+
+        override func scrollWheel(with event: NSEvent) {
+            let localPoint = self.convert(event.locationInWindow, from: nil)
+            onScroll?(event.scrollingDeltaY, localPoint)
+        }
+    }
+}
+
 struct LivePhotoPlayerView: NSViewRepresentable {
     let player: AVPlayer
     let showControls: Bool
@@ -84,6 +143,11 @@ struct MediaContentView: View {
                         .controlSize(.large)
                 }
             }
+            .background(GeometryReader { geo in
+                ScrollGestureView { delta, location in
+                    handleScrollZoom(delta: delta, location: location, size: geo.size)
+                }
+            })
             .scaleEffect(totalZoom + currentZoom)
             .offset(offset)
             .contextMenu {
@@ -257,6 +321,41 @@ struct MediaContentView: View {
                 // Handle Video/Live Photo setup
                 self.setupPlayer()
             }
+        }
+    }
+    
+    private func handleScrollZoom(delta: CGFloat, location: CGPoint, size: CGSize) {
+        let sensitivity: CGFloat = 0.01
+        let oldZoom = totalZoom
+        let newZoom = max(1.0, min(totalZoom + (delta * sensitivity), 10.0))
+        
+        if newZoom == oldZoom { return }
+
+        // Mouse location in SwiftUI-style center-relative coordinates
+        // AppKit Y is measured from bottom, SwiftUI offset Y is measured from center (positive is down)
+        let mouseFromCenter = CGSize(
+            width: location.x - size.width / 2,
+            height: (size.height - location.y) - size.height / 2
+        )
+        
+        let ratio = newZoom / oldZoom
+        
+        // Update the zoom level
+        totalZoom = newZoom
+        
+        if totalZoom == 1.0 && oldZoom > 1.0 {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
+                offset = .zero
+                lastOffset = .zero
+            }
+        } else {
+            // Adjust offset to keep the point under the mouse stable
+            // This math shifts the image so the "focal point" doesn't move on screen
+            offset = CGSize(
+                width: mouseFromCenter.width * (1 - ratio) + offset.width * ratio,
+                height: mouseFromCenter.height * (1 - ratio) + offset.height * ratio
+            )
+            lastOffset = offset
         }
     }
     
