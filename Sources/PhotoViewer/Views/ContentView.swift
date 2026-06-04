@@ -11,6 +11,18 @@ struct ContentView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @State private var selection: SidebarSelection? = .allPhotos
     
+    private var validatedSelection: SidebarSelection {
+        guard let selection = selection else { return .allPhotos }
+        switch selection {
+        case .year(let year):
+            return viewModel.groupedYears[year] != nil ? selection : .allPhotos
+        case .month(let id):
+            return viewModel.photoMonth(withID: id) != nil ? selection : .allPhotos
+        default:
+            return selection
+        }
+    }
+    
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
@@ -82,6 +94,11 @@ struct ContentView: View {
         .onAppear {
             viewModel.loadDirectories()
         }
+        .onChange(of: viewModel.photoMonths) { _ in
+            if let currentSelection = selection, validatedSelection != currentSelection {
+                selection = validatedSelection
+            }
+        }
     }
     
     @ViewBuilder
@@ -95,8 +112,8 @@ struct ContentView: View {
         } else {
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    switch selection {
-                    case .allPhotos, .none:
+                    switch validatedSelection {
+                    case .allPhotos:
                         ForEach(viewModel.photoMonths) { month in
                             PhotoGridView(month: month, viewModel: viewModel)
                         }
@@ -115,16 +132,18 @@ struct ContentView: View {
                             PhotoGridView(title: "Favorites", photos: viewModel.favoritePhotos, viewModel: viewModel)
                         }
                     case .year(let selectedYear):
-                        if let monthsInYear = viewModel.groupedYears[selectedYear] {
+                        if let monthsInYear = viewModel.groupedYears[selectedYear], !monthsInYear.isEmpty {
                             ForEach(monthsInYear) { month in
                                 PhotoGridView(month: month, viewModel: viewModel)
                             }
+                        } else {
+                            noContentView(message: "No photos were found for the selected year.")
                         }
                     case .month(let id):
                         if let month = viewModel.photoMonth(withID: id) {
                             PhotoGridView(month: month, viewModel: viewModel)
                         } else {
-                            errorView(message: "No photos were found for the selected month.")
+                            noContentView(message: "No photos were found for the selected month.")
                         }
                     }
                 }
@@ -134,8 +153,8 @@ struct ContentView: View {
     }
     
     private var detailTitle: String {
-        switch selection {
-        case .allPhotos, .none:
+        switch validatedSelection {
+        case .allPhotos:
             return "All Photos"
         case .favorites:
             return "Favorites"
@@ -144,6 +163,19 @@ struct ContentView: View {
         case .month(let id):
             return viewModel.photoMonth(withID: id)?.monthYearString ?? "Photos"
         }
+    }
+    
+    private func noContentView(message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 48))
+                .foregroundColor(.orange)
+            Text(message)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 400)
+        .padding(32)
     }
     
     private var emptyStateView: some View {
