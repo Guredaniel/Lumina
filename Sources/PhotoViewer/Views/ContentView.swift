@@ -3,6 +3,9 @@ import SwiftUI
 enum SidebarSelection: Hashable {
     case allPhotos
     case favorites
+    case source(URL)
+    case sourceYear(URL, Int)
+    case sourceMonth(URL, String)
     case year(Int)
     case month(String)
 }
@@ -18,8 +21,25 @@ struct ContentView: View {
             return viewModel.groupedYears[year] != nil ? selection : .allPhotos
         case .month(let id):
             return viewModel.photoMonth(withID: id) != nil ? selection : .allPhotos
+        case .source(let directory):
+            return viewModel.selectedDirectories.contains(directory) ? selection : .allPhotos
+        case .sourceYear(let directory, let year):
+            let years = groupedYears(for: directory)
+            return years[year] != nil ? selection : .allPhotos
+        case .sourceMonth(let directory, let id):
+            return sourcePhotoMonth(withID: id, directory: directory) != nil ? selection : .allPhotos
         default:
             return selection
+        }
+    }
+
+    private var activeSource: URL? {
+        guard let selection = selection else { return nil }
+        switch selection {
+        case .source(let directory), .sourceYear(let directory, _), .sourceMonth(let directory, _):
+            return directory
+        default:
+            return nil
         }
     }
     
@@ -35,7 +55,35 @@ struct ContentView: View {
                         .foregroundColor(selection == .favorites ? .white : .brown)
                 }
                 
-                if !viewModel.sortedYears.isEmpty {
+                if !viewModel.selectedDirectories.isEmpty {
+                    Section(header: Text("Sources")) {
+                        Label("All Sources", systemImage: "tray.full")
+                            .tag(SidebarSelection.allPhotos)
+                        ForEach(viewModel.selectedDirectories, id: \.self) { directory in
+                            Label(directory.lastPathComponent, systemImage: "folder")
+                                .tag(SidebarSelection.source(directory))
+                        }
+                    }
+                }
+
+                if let source = activeSource {
+                    let years = groupedYears(for: source)
+                    let yearKeys = years.keys.sorted(by: >)
+                    if !yearKeys.isEmpty {
+                        ForEach(yearKeys, id: \.self) { year in
+                            Section(header: Text(String(year))) {
+                                Label("All \(String(year))", systemImage: "photo.stack")
+                                    .tag(SidebarSelection.sourceYear(source, year))
+                                if let monthsInYear = years[year] {
+                                    ForEach(monthsInYear) { month in
+                                        Label(month.monthString, systemImage: "calendar")
+                                            .tag(SidebarSelection.sourceMonth(source, month.id))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if !viewModel.sortedYears.isEmpty {
                     ForEach(viewModel.sortedYears, id: \.self) { year in
                         Section(header: Text(String(year))) {
                             // Optionally let user select the whole year
@@ -99,6 +147,11 @@ struct ContentView: View {
                 selection = validatedSelection
             }
         }
+        .onChange(of: viewModel.selectedDirectories) { _ in
+            if let currentSelection = selection, validatedSelection != currentSelection {
+                selection = validatedSelection
+            }
+        }
     }
     
     @ViewBuilder
@@ -145,6 +198,30 @@ struct ContentView: View {
                         } else {
                             noContentView(message: "No photos were found for the selected month.")
                         }
+                    case .source(let directory):
+                        let months = photoMonths(for: directory)
+                        if months.isEmpty {
+                            noContentView(message: "No photos were found in \(directory.lastPathComponent).")
+                        } else {
+                            ForEach(months) { month in
+                                PhotoGridView(month: month, viewModel: viewModel)
+                            }
+                        }
+                    case .sourceYear(let directory, let selectedYear):
+                        let years = groupedYears(for: directory)
+                        if let monthsInYear = years[selectedYear], !monthsInYear.isEmpty {
+                            ForEach(monthsInYear) { month in
+                                PhotoGridView(month: month, viewModel: viewModel)
+                            }
+                        } else {
+                            noContentView(message: "No photos were found for \(directory.lastPathComponent) in \(selectedYear).")
+                        }
+                    case .sourceMonth(let directory, let id):
+                        if let month = sourcePhotoMonth(withID: id, directory: directory) {
+                            PhotoGridView(month: month, viewModel: viewModel)
+                        } else {
+                            noContentView(message: "No photos were found in \(directory.lastPathComponent) for the selected month.")
+                        }
                     }
                 }
             }
@@ -158,11 +235,35 @@ struct ContentView: View {
             return "All Photos"
         case .favorites:
             return "Favorites"
+        case .source(let directory):
+            return "Source: \(directory.lastPathComponent)"
+        case .sourceYear(let directory, let year):
+            return "\(directory.lastPathComponent): \(year)"
+        case .sourceMonth(let directory, let id):
+            return sourcePhotoMonth(withID: id, directory: directory)?.monthYearString ?? "Source Photos"
         case .year(let year):
             return "Photos from \(year)"
         case .month(let id):
             return viewModel.photoMonth(withID: id)?.monthYearString ?? "Photos"
         }
+    }
+
+    private func photoMonths(for directory: URL) -> [PhotoMonth] {
+        viewModel.photoMonths.compactMap { month in
+            let filteredPhotos = month.photos.filter { photo in
+                photo.url.standardizedFileURL.path.hasPrefix(directory.standardizedFileURL.path)
+            }
+            guard !filteredPhotos.isEmpty else { return nil }
+            return PhotoMonth(year: month.year, month: month.month, photos: filteredPhotos)
+        }
+    }
+
+    private func groupedYears(for directory: URL) -> [Int: [PhotoMonth]] {
+        Dictionary(grouping: photoMonths(for: directory), by: { $0.year })
+    }
+
+    private func sourcePhotoMonth(withID id: String, directory: URL) -> PhotoMonth? {
+        photoMonths(for: directory).first(where: { $0.id == id })
     }
     
     private func noContentView(message: String) -> some View {
