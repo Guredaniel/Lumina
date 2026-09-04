@@ -25,14 +25,6 @@ class PhotoViewModel: ObservableObject {
     private let favoriteManager: FavoriteManager
     private var preCachingTask: Task<Void, Never>? = nil
     
-    private let photoCacheURL: URL = {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let storageDir = caches.appendingPathComponent("com.photoviewer", isDirectory: true)
-        try? FileManager.default.createDirectory(at: storageDir, withIntermediateDirectories: true)
-        return storageDir.appendingPathComponent("photoCache.json")
-    }()
-    
     // MARK: - Initialization
     init() {
         scanCoordinator = ScanCoordinator()
@@ -46,7 +38,7 @@ class PhotoViewModel: ObservableObject {
         // Sync directory state
         selectedDirectories = directoryManager.selectedDirectories
         favoritePaths = favoriteManager.favoritePaths
-        loadCachedPhotoMonths()
+        loadPhotosFromDatabase()
         updateDerivedData()
     }
     
@@ -63,7 +55,8 @@ class PhotoViewModel: ObservableObject {
     func removeDirectory(_ url: URL) {
         directoryManager.removeDirectory(url)
         selectedDirectories = directoryManager.selectedDirectories
-        scanAllDirectories()
+        self.photoMonths = SQLiteDatabase.shared.fetchPhotoMonths(forDirectories: selectedDirectories)
+        updateDerivedData()
     }
     
     func loadDirectories() {
@@ -111,7 +104,6 @@ class PhotoViewModel: ObservableObject {
                     guard let self = self else { return }
                     self.photoMonths = months
                     self.updateDerivedData()
-                    self.saveCachedPhotoMonths()
                     self.startBackgroundThumbnailCaching()
                     self.isLoading = false
                     self.isScanning = false
@@ -160,36 +152,13 @@ class PhotoViewModel: ObservableObject {
         self.favoritePhotos = allPhotosFlat.filter { paths.contains($0.url.path) }
     }
     
-    private func loadCachedPhotoMonths() {
-        do {
-            let data = try Data(contentsOf: photoCacheURL)
-            let cachedMonths = try JSONDecoder().decode([PhotoMonth].self, from: data)
-            self.photoMonths = filterCachedPhotoMonths(cachedMonths)
-        } catch {
-            print("PhotoViewModel: failed to load cached photo months: \(error)")
+    private func loadPhotosFromDatabase() {
+        SQLiteDatabase.shared.cleanupDuplicateLivePhotoVideos()
+        guard !selectedDirectories.isEmpty else {
+            self.photoMonths = []
+            return
         }
-    }
-    
-    private func saveCachedPhotoMonths() {
-        do {
-            let data = try JSONEncoder().encode(photoMonths)
-            try data.write(to: photoCacheURL, options: .atomic)
-        } catch {
-            print("PhotoViewModel: failed to save cached photo months: \(error)")
-        }
-    }
-    
-    private func filterCachedPhotoMonths(_ months: [PhotoMonth]) -> [PhotoMonth] {
-        let directories = self.selectedDirectories
-        guard !directories.isEmpty else { return [] }
-        
-        return months.compactMap { month in
-            let filteredPhotos = month.photos.filter { photo in
-                directories.contains(where: { photo.url.standardizedFileURL.path.hasPrefix($0.standardizedFileURL.path) })
-            }
-            if filteredPhotos.isEmpty { return nil }
-            return PhotoMonth(year: month.year, month: month.month, photos: filteredPhotos)
-        }
+        self.photoMonths = SQLiteDatabase.shared.fetchPhotoMonths(forDirectories: selectedDirectories)
     }
     
     // MARK: - Photo Navigation
@@ -226,6 +195,13 @@ class PhotoViewModel: ObservableObject {
             if let videoURL = photo.videoURL, FileManager.default.fileExists(atPath: videoURL.path) {
                 try? FileManager.default.trashItem(at: videoURL, resultingItemURL: nil)
             }
+            
+            // Delete from SQLite database
+            var pathsToDelete = [photo.url.path]
+            if let videoURL = photo.videoURL {
+                pathsToDelete.append(videoURL.path)
+            }
+            SQLiteDatabase.shared.deletePhotos(paths: pathsToDelete)
             
             // Remove from the photoMonths array
             for i in 0..<photoMonths.count {

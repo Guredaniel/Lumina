@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import CoreLocation
 
 struct ScrollGestureView: NSViewRepresentable {
     var onScroll: (CGFloat, CGPoint) -> Void
@@ -296,6 +297,18 @@ struct MediaContentView: View {
                     if let height = properties[kCGImagePropertyPixelHeight as String] as? NSNumber {
                         metadata["height"] = String(describing: height)
                     }
+                    // Extract GPS data
+                    if let gps = properties[kCGImagePropertyGPSDictionary as String] as? [String: Any] {
+                        if let lat = gps[kCGImagePropertyGPSLatitude as String] as? Double,
+                           let latRef = gps[kCGImagePropertyGPSLatitudeRef as String] as? String,
+                           let lon = gps[kCGImagePropertyGPSLongitude as String] as? Double,
+                           let lonRef = gps[kCGImagePropertyGPSLongitudeRef as String] as? String {
+                            let signedLat = latRef == "S" ? -lat : lat
+                            let signedLon = lonRef == "W" ? -lon : lon
+                            metadata["gpsLatitude"] = String(signedLat)
+                            metadata["gpsLongitude"] = String(signedLon)
+                        }
+                    }
                 }
                 
                 return (image, metadata)
@@ -427,6 +440,8 @@ struct PreviewView: View {
     @State private var preloadedImages: [URL: NSImage] = [:]
     @State private var navigationQueue: [Photo] = []
     @State private var isNavigating = false
+    @State private var geoPlaceName: String? = nil
+    @State private var isGeocoding = false
     
     // Hover states for buttons
     @State private var isCloseButtonHovered = false
@@ -601,6 +616,41 @@ struct PreviewView: View {
                         if let w = meta["width"], let h = meta["height"] {
                             metadataRow(label: "Dimensions:", value: "\(w) \u{00D7} \(h)")
                         }
+                        // Geo / Location row
+                        if let latStr = meta["gpsLatitude"], let lonStr = meta["gpsLongitude"],
+                           let lat = Double(latStr), let lon = Double(lonStr) {
+                            let coordStr = String(format: "%.4f° %@, %.4f° %@",
+                                abs(lat), lat >= 0 ? "N" : "S",
+                                abs(lon), lon >= 0 ? "E" : "W")
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("Location:").fontWeight(.semibold)
+                                    Spacer()
+                                    if isGeocoding {
+                                        ProgressView().scaleEffect(0.6)
+                                    } else if let place = geoPlaceName {
+                                        Text(place).foregroundColor(.secondary)
+                                    }
+                                }
+                                HStack {
+                                    Text(coordStr)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary.opacity(0.8))
+                                    Spacer()
+                                    Button {
+                                        let encoded = "\(lat),\(lon)"
+                                        if let url = URL(string: "maps://?q=\(encoded)&ll=\(encoded)") {
+                                            NSWorkspace.shared.open(url)
+                                        }
+                                    } label: {
+                                        Label("Open in Maps", systemImage: "map")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                            }
+                        }
+
                     }
                 }
                 .padding()
@@ -628,6 +678,11 @@ struct PreviewView: View {
         .animation(.easeInOut(duration: 0.15), value: isLeftNavButtonHovered)
         .animation(.easeInOut(duration: 0.15), value: isRightNavButtonHovered)
         .ignoresSafeArea(edges: isFullscreen ? [.bottom, .horizontal] : [])
+        .onChange(of: extractedMetadata) { _ in geocodeIfNeeded() }
+        .onChange(of: currentPhoto.url) { _ in
+            geoPlaceName = nil
+            isGeocoding = false
+        }
     }
     
     @ViewBuilder
@@ -637,6 +692,32 @@ struct PreviewView: View {
                 Text(label).fontWeight(.semibold)
                 Spacer()
                 Text(value).foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    /// Reverse-geocodes GPS coordinates from the current photo's metadata using CLGeocoder.
+    private func geocodeIfNeeded() {
+        let meta = extractedMetadata.isEmpty ? currentPhoto.exifMetadata : extractedMetadata
+        guard geoPlaceName == nil,
+              !isGeocoding,
+              let latStr = meta["gpsLatitude"],
+              let lonStr = meta["gpsLongitude"],
+              let lat = Double(latStr),
+              let lon = Double(lonStr) else { return }
+        
+        isGeocoding = true
+        let location = CLLocation(latitude: lat, longitude: lon)
+        CLGeocoder().reverseGeocodeLocation(location) { placemarks, _ in
+            DispatchQueue.main.async {
+                isGeocoding = false
+                if let pm = placemarks?.first {
+                    var parts: [String] = []
+                    if let locality = pm.locality { parts.append(locality) }
+                    if let adminArea = pm.administrativeArea { parts.append(adminArea) }
+                    if let country = pm.country { parts.append(country) }
+                    geoPlaceName = parts.isEmpty ? nil : parts.joined(separator: ", ")
+                }
             }
         }
     }

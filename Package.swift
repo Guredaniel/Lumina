@@ -21,7 +21,8 @@ let package = Package(
                 .unsafeFlags(["-suppress-warnings"])
             ],
             linkerSettings: [
-                .linkedFramework("Security")
+                .linkedFramework("Security"),
+                .linkedLibrary("sqlite3")
             ]
         )
     ]

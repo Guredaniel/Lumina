@@ -25,25 +25,23 @@ class PhotoScanner {
         return nil
     }
     
+    // MARK: - Helper Structures
+    
+    struct DiscoveredFile {
+        let url: URL
+        let modificationDate: Date
+        let fileSize: Int
+        let isImage: Bool
+        let isVideo: Bool
+    }
+    
     // MARK: - Main Scanning Operations
     
     func scanDirectories(_ directories: [URL]) async throws -> [PhotoMonth] {
-        return try await withThrowingTaskGroup(of: [Photo].self) { group in
-            for directory in directories {
-                group.addTask {
-                    return try await self.scanDirectory(directory)
-                        .flatMap { $0.photos }
-                }
-            }
-            
-            var allPhotos: [Photo] = []
-            for try await photos in group {
-                allPhotos.append(contentsOf: photos)
-            }
-            
-            let groupedPhotos = self.groupPhotosByMonth(allPhotos)
-            return groupedPhotos.sorted()
+        for directory in directories {
+            _ = try await scanDirectory(directory)
         }
+        return SQLiteDatabase.shared.fetchPhotoMonths(forDirectories: directories)
     }
     
     func scanDirectory(_ directory: URL) async throws -> [PhotoMonth] {
@@ -51,46 +49,93 @@ class PhotoScanner {
             throw PhotoViewerError.invalidDirectory(path: directory.path)
         }
         
-        let photos = try await enumerateAndProcessPhotos(in: directory)
-        let groupedPhotos = self.groupPhotosByMonth(photos)
-        return groupedPhotos.sorted()
-    }
-    
-    // MARK: - Core Scanning Logic (Separated)
-    
-    /// Enumerates all files in a directory and processes them into Photo objects.
-    private func enumerateAndProcessPhotos(in directory: URL) async throws -> [Photo] {
-        let fileURLs = try enumerateFiles(in: directory)
+        let dirPath = directory.standardizedFileURL.path
+        let knownFiles = SQLiteDatabase.shared.getKnownFiles(forDirectoryPrefix: dirPath)
+        let discoveredFiles = try enumerateFiles(in: directory)
         
-        let mediaItems = try await fileURLs.concurrentMap { url -> Photo? in
-            do {
-                return try self.processFileURL(url)
-            } catch {
-                print("Warning: Skipping file due to error at \(url.path): \(error.localizedDescription)")
-                return nil
+        let discoveredPaths = Set(discoveredFiles.map { $0.url.path })
+        
+        // 1. Identify and remove deleted files (in DB for this directory prefix, but no longer on disk)
+        let deletedPaths = knownFiles.keys.filter { !discoveredPaths.contains($0) }
+        if !deletedPaths.isEmpty {
+            SQLiteDatabase.shared.deletePhotos(paths: Array(deletedPaths))
+        }
+        
+        // 2. Identify paired Live Photo videos
+        // Index all discovered video files by lowercase directory + lowercase base name
+        var videoMap: [String: URL] = [:]
+        for file in discoveredFiles where file.isVideo {
+            let key = file.url.deletingLastPathComponent().path.lowercased() + "/" + file.url.deletingPathExtension().lastPathComponent.lowercased()
+            videoMap[key] = file.url
+        }
+        
+        var livePhotoVideoPathsLower = Set<String>()
+        var imagePairedVideos: [String: URL] = [:] // image path -> matched video URL
+        
+        for file in discoveredFiles where file.isImage {
+            let key = file.url.deletingLastPathComponent().path.lowercased() + "/" + file.url.deletingPathExtension().lastPathComponent.lowercased()
+            if let matchedVideoURL = videoMap[key] {
+                livePhotoVideoPathsLower.insert(matchedVideoURL.path.lowercased())
+                imagePairedVideos[file.url.path] = matchedVideoURL
+            } else if let pairedVideo = detectLivePhoto(for: file.url) {
+                livePhotoVideoPathsLower.insert(pairedVideo.path.lowercased())
+                imagePairedVideos[file.url.path] = pairedVideo
             }
         }
         
-        // Filter out videos that are paired with images (Live Photo videos)
-        let compactItems = mediaItems.compactMap { $0 }
-        let livePhotoVideoPaths = Set(compactItems.compactMap { $0.videoURL?.path.lowercased() })
-        return compactItems.filter { item in
-            if item.isVideo {
-                return !livePhotoVideoPaths.contains(item.url.path.lowercased())
-            }
-            return true
+        // Remove any paired videos that were stored as standalone photos (case-insensitive check)
+        let strayVideos = knownFiles.keys.filter { livePhotoVideoPathsLower.contains($0.lowercased()) }
+        if !strayVideos.isEmpty {
+            SQLiteDatabase.shared.deletePhotos(paths: Array(strayVideos))
         }
+        
+        // 3. Find files that need processing (new or changed)
+        let filesToProcess = discoveredFiles.filter { file in
+            // Do not process paired Live Photo videos as standalone photos
+            if livePhotoVideoPathsLower.contains(file.url.path.lowercased()) {
+                return false
+            }
+            guard let known = knownFiles[file.url.path] else {
+                return true // New file
+            }
+            let dateDiff = abs(known.modifiedDate.timeIntervalSince(file.modificationDate))
+            return dateDiff > 1.0 || known.fileSize != file.fileSize // Modified file
+        }
+        
+        // 4. Concurrently process only the new / modified files
+        if !filesToProcess.isEmpty {
+            let processedItems = try await filesToProcess.concurrentMap { file -> (photo: Photo, fileModifiedDate: Date, fileSize: Int)? in
+                do {
+                    let pairedVideo = imagePairedVideos[file.url.path]
+                    let photo = try self.processFileURL(file.url, pairedVideoURL: pairedVideo)
+                    return (photo, file.modificationDate, file.fileSize)
+                } catch {
+                    print("Warning: Skipping file due to error at \(file.url.path): \(error.localizedDescription)")
+                    return nil
+                }
+            }
+            let validItems = processedItems.compactMap { $0 }
+            SQLiteDatabase.shared.batchUpsertPhotos(validItems)
+        }
+        
+        // Trigger duplicate cleanup in database as extra safeguard
+        SQLiteDatabase.shared.cleanupDuplicateLivePhotoVideos()
+        
+        // 5. Fetch updated months from SQLite
+        return SQLiteDatabase.shared.fetchPhotoMonths(forDirectories: [directory])
     }
+    
+    // MARK: - Core File Enumeration
     
     /// Enumerates all supported image and video files in a directory recursively.
-    private func enumerateFiles(in directory: URL) throws -> [URL] {
-        let keys: [URLResourceKey] = [.isDirectoryKey, .typeIdentifierKey, .contentModificationDateKey, .creationDateKey]
+    private func enumerateFiles(in directory: URL) throws -> [DiscoveredFile] {
+        let keys: [URLResourceKey] = [.isDirectoryKey, .typeIdentifierKey, .contentModificationDateKey, .creationDateKey, .fileSizeKey]
         
         guard let enumerator = fileManager.enumerator(at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else {
             throw PhotoViewerError.permissionDenied(path: directory.path)
         }
         
-        var supportedFiles: [URL] = []
+        var supportedFiles: [DiscoveredFile] = []
         
         for case let fileURL as URL in enumerator {
             do {
@@ -101,11 +146,22 @@ class PhotoScanner {
 
                 let typeIdentifier = resourceValues.typeIdentifier
                 let fileExtension = fileURL.pathExtension.lowercased()
-                guard isImageType(typeIdentifier: typeIdentifier, fileExtension: fileExtension)
-                        || isVideoType(typeIdentifier: typeIdentifier, fileExtension: fileExtension) else {
+                let isImg = isImageType(typeIdentifier: typeIdentifier, fileExtension: fileExtension)
+                let isVid = isVideoType(typeIdentifier: typeIdentifier, fileExtension: fileExtension)
+                guard isImg || isVid else {
                     continue
                 }
-                supportedFiles.append(fileURL)
+                
+                let modDate = resourceValues.contentModificationDate ?? resourceValues.creationDate ?? Date.distantPast
+                let fileSize = resourceValues.fileSize ?? 0
+                
+                supportedFiles.append(DiscoveredFile(
+                    url: fileURL.standardizedFileURL,
+                    modificationDate: modDate,
+                    fileSize: fileSize,
+                    isImage: isImg,
+                    isVideo: isVid
+                ))
             } catch {
                 // Skip files we can't read metadata for
                 continue
@@ -116,7 +172,7 @@ class PhotoScanner {
     }
     
     /// Processes a single file URL into a Photo object.
-    private func processFileURL(_ fileURL: URL) throws -> Photo {
+    private func processFileURL(_ fileURL: URL, pairedVideoURL: URL? = nil) throws -> Photo {
         let keys: [URLResourceKey] = [.typeIdentifierKey, .contentModificationDateKey, .creationDateKey]
         
         let resourceValues = try fileURL.resourceValues(forKeys: Set(keys))
@@ -128,7 +184,7 @@ class PhotoScanner {
         var videoURL: URL? = nil
         if !isVideo {
             // Check for paired Live Photo video
-            videoURL = detectLivePhoto(for: fileURL)
+            videoURL = pairedVideoURL ?? detectLivePhoto(for: fileURL)
         }
         
         // Extract metadata during scan for better performance
@@ -147,8 +203,19 @@ class PhotoScanner {
     private func detectLivePhoto(for imageURL: URL) -> URL? {
         let baseName = imageURL.deletingPathExtension().lastPathComponent
         let dir = imageURL.deletingLastPathComponent()
-        let possibleVideoExtensions = ["mov", "MOV", "mp4", "MP4"]
         
+        // Check directory contents first to get exact disk casing and avoid APFS case folding issues
+        if let contents = try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
+            let possibleExtensions = Set(["mov", "mp4"])
+            for url in contents {
+                if url.deletingPathExtension().lastPathComponent.caseInsensitiveCompare(baseName) == .orderedSame,
+                   possibleExtensions.contains(url.pathExtension.lowercased()) {
+                    return url.standardized
+                }
+            }
+        }
+        
+        let possibleVideoExtensions = ["mov", "MOV", "mp4", "MP4"]
         for ext in possibleVideoExtensions {
             let possibleURL = dir.appendingPathComponent("\(baseName).\(ext)")
             var isDir: ObjCBool = false
@@ -187,6 +254,19 @@ class PhotoScanner {
             }
             if let model = exif["Model"] as? String {
                 metadata["cameraModel"] = model
+            }
+        }
+        
+        // Extract GPS data
+        if let gps = properties[kCGImagePropertyGPSDictionary as String] as? [String: Any] {
+            if let lat = gps[kCGImagePropertyGPSLatitude as String] as? Double,
+               let latRef = gps[kCGImagePropertyGPSLatitudeRef as String] as? String,
+               let lon = gps[kCGImagePropertyGPSLongitude as String] as? Double,
+               let lonRef = gps[kCGImagePropertyGPSLongitudeRef as String] as? String {
+                let signedLat = latRef == "S" ? -lat : lat
+                let signedLon = lonRef == "W" ? -lon : lon
+                metadata["gpsLatitude"] = String(signedLat)
+                metadata["gpsLongitude"] = String(signedLon)
             }
         }
         
