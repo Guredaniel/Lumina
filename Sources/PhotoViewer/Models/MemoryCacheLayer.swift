@@ -2,7 +2,7 @@ import AppKit
 
 /// In-memory cache layer for thumbnails using NSCache.
 /// Provides fast O(1) access to recently-used thumbnails.
-class MemoryCacheLayer {
+class MemoryCacheLayer: @unchecked Sendable {
     private let cache = NSCache<NSString, NSImage>()
     
     init() {

@@ -60,7 +60,7 @@ struct PhotoThumbnailView: View {
         
         // Synchronous cache check: If the image is already cached, 
         // show it IMMEDIATELY to prevent the loading flicker.
-        _thumbnail = State(initialValue: ThumbnailCache.shared.thumbnail(for: photo.url))
+        _thumbnail = State(initialValue: ThumbnailCacheManager.shared.thumbnail(for: photo.url))
     }
     
     var body: some View {

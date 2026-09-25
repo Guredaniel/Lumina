@@ -6,7 +6,7 @@ import AppKit
 /// Cache key strategy:
 /// - Uses URL.path hash for stable, collision-free keys (fixes duplicate filename issue)
 /// - Prevents cache misses when identical filenames exist in different directories
-class ThumbnailCacheManager {
+class ThumbnailCacheManager: @unchecked Sendable {
     static let shared = ThumbnailCacheManager()
     
     private let memoryLayer: MemoryCacheLayer

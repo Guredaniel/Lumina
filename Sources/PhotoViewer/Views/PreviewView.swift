@@ -109,7 +109,7 @@ struct MediaContentView: View {
         self._extractedMetadata = extractedMetadata
         
         // Pre-load the thumbnail instantly so it feels blazing fast
-        if let cachedThumb = ThumbnailCache.shared.thumbnail(for: photo.url) {
+        if let cachedThumb = ThumbnailCacheManager.shared.thumbnail(for: photo.url) {
             _fullImage = State(initialValue: cachedThumb)
         }
     }
@@ -781,7 +781,7 @@ struct PreviewView: View {
         }
         
         // Quick load: try cached thumbnail first, then full image with timeout
-        if let thumb = ThumbnailCache.shared.thumbnail(for: url) {
+        if let thumb = ThumbnailCacheManager.shared.thumbnail(for: url) {
             return thumb
         }
         

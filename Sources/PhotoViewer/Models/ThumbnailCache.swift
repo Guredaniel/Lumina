@@ -5,8 +5,6 @@ import AppKit
 /// 
 /// This class exists for backward compatibility during the refactoring transition.
 class ThumbnailCache {
-    static let shared = ThumbnailCacheManager.shared
-    
     /// Retrieves a cached thumbnail for the given URL.
     static func thumbnail(for url: URL) -> NSImage? {
         return ThumbnailCacheManager.shared.thumbnail(for: url)

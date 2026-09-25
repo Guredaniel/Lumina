@@ -3,7 +3,7 @@ import ImageIO
 import AVFoundation
 import os
 
-class ThumbnailService {
+class ThumbnailService: @unchecked Sendable {
     static let shared = ThumbnailService()
     
     private let logger = Logger(subsystem: "com.photoviewer", category: "ThumbnailService")
@@ -14,7 +14,7 @@ class ThumbnailService {
     /// Uses optimized native decoding and async/await for non-blocking operations.
     func generateThumbnail(for photo: URL, size: CGSize = CGSize(width: 200, height: 200)) async throws -> NSImage? {
         // Check cache first
-        if let cachedImage = ThumbnailCache.shared.thumbnail(for: photo) {
+        if let cachedImage = ThumbnailCacheManager.shared.thumbnail(for: photo) {
             return cachedImage
         }
         
@@ -34,7 +34,7 @@ class ThumbnailService {
             
             // Cache the generated image
             if let generatedImage = image {
-                ThumbnailCache.shared.cacheThumbnail(generatedImage, for: photo)
+                ThumbnailCacheManager.shared.cacheThumbnail(generatedImage, for: photo)
             }
             
             return image

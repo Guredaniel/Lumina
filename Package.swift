@@ -1,10 +1,10 @@
-// swift-tools-version:5.9
+// swift-tools-version: 6.4
 import PackageDescription
 
 let package = Package(
     name: "Lumina",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v27)
     ],
     products: [
         .executable(name: "Lumina", targets: ["PhotoViewer"])

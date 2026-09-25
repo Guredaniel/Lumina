@@ -1,5 +1,5 @@
 import AppKit
-import CommonCrypto // Required for MD5 hashing
+import CryptoKit
 
 /// Persistent disk cache layer for thumbnails.
 /// Manages storage, retrieval, and size-based eviction of cached thumbnails.
@@ -120,12 +120,10 @@ class DiskCacheLayer {
 
 // MARK: - String+MD5
 extension String {
+    // Uses CryptoKit's Insecure.MD5 — safe here because this is a cache key, not a security hash.
     func md5() -> String {
         let data = Data(self.utf8)
-        var hash = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
-        data.withUnsafeBytes { buffer in
-            _ = CC_MD5(buffer.baseAddress, CC_LONG(buffer.count), &hash)
-        }
-        return hash.map { String(format: "%02hhx", $0) }.joined()
+        let digest = Insecure.MD5.hash(data: data)
+        return digest.map { String(format: "%02hhx", $0) }.joined()
     }
 }

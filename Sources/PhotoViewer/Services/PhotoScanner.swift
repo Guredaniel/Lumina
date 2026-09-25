@@ -3,7 +3,7 @@ import ImageIO
 import AppKit
 import UniformTypeIdentifiers
 
-class PhotoScanner {
+class PhotoScanner: @unchecked Sendable {
     static let shared = PhotoScanner()
     
     private let fileManager = FileManager.default
@@ -16,7 +16,7 @@ class PhotoScanner {
         panel.message = AppConstants.Messages.selectFolderPrompt
         panel.prompt = AppConstants.Messages.selectFolderButton
         
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApplication.shared.activate()
         
         let response = panel.runModal()
         if response == .OK {
@@ -104,9 +104,10 @@ class PhotoScanner {
         
         // 4. Concurrently process only the new / modified files
         if !filesToProcess.isEmpty {
+            let pairedVideosSnapshot = imagePairedVideos  // Immutable capture for concurrent use
             let processedItems = try await filesToProcess.concurrentMap { file -> (photo: Photo, fileModifiedDate: Date, fileSize: Int)? in
                 do {
-                    let pairedVideo = imagePairedVideos[file.url.path]
+                    let pairedVideo = pairedVideosSnapshot[file.url.path]
                     let photo = try self.processFileURL(file.url, pairedVideoURL: pairedVideo)
                     return (photo, file.modificationDate, file.fileSize)
                 } catch {
@@ -337,8 +338,8 @@ class PhotoScanner {
 }
 
 // Helper for concurrent mapping using Swift Concurrency TaskGroups
-extension Array {
-    func concurrentMap<T>(_ transform: @escaping (Element) async throws -> T) async throws -> [T] {
+extension Array where Element: Sendable {
+    func concurrentMap<T: Sendable>(_ transform: @escaping @Sendable (Element) async throws -> T) async throws -> [T] {
         // Limit concurrency to avoid saturating the thread pool and starving the UI/Image loading
         let maxConcurrency = 8
         return try await withThrowingTaskGroup(of: (Int, T).self) { group in

@@ -106,8 +106,12 @@ struct ContentView: View {
                 ToolbarItemGroup {
                     if viewModel.isScanning {
                         if !viewModel.photoMonths.isEmpty {
-                            ProgressView()
-                                .controlSize(.small)
+                            Button(action: {}) {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            .disabled(true)
+                            .help("Scanning…")
                         }
                     } else {
                         Button(action: { viewModel.scanAllDirectories(showLoading: false) }) {

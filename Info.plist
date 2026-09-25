@@ -21,13 +21,11 @@
     <key>CFBundleVersion</key>
     <string>2</string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>27.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>CFBundleIconFile</key>
     <string>icon</string>
-    <key>NSSupportsAutomaticGraphicsSwitching</key>
-    <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 Lumina. All rights reserved.</string>
     <key>NSAppTransportSecurity</key>
