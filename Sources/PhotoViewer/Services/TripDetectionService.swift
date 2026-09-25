@@ -8,8 +8,8 @@ struct TripDetectionService: Sendable {
 
     func detectTrips(in photos: [Photo]) -> [TripAlbum] {
         let locatedPhotos = photos.compactMap { photo -> (Photo, CLLocation)? in
-            guard let latitude = Double(photo.exifMetadata["gpsLatitude"] ?? ""),
-                  let longitude = Double(photo.exifMetadata["gpsLongitude"] ?? ""),
+            guard let latitude = photo.latitude,
+                let longitude = photo.longitude,
                   (-90...90).contains(latitude),
                   (-180...180).contains(longitude) else { return nil }
             return (photo, CLLocation(latitude: latitude, longitude: longitude))
@@ -47,8 +47,8 @@ struct TripDetectionService: Sendable {
 
     func locationName(for photos: [Photo]) async -> String? {
         let coordinates = photos.compactMap { photo -> CLLocation? in
-            guard let latitude = Double(photo.exifMetadata["gpsLatitude"] ?? ""),
-                  let longitude = Double(photo.exifMetadata["gpsLongitude"] ?? ""),
+            guard let latitude = photo.latitude,
+                let longitude = photo.longitude,
                   (-90...90).contains(latitude),
                   (-180...180).contains(longitude) else { return nil }
             return CLLocation(latitude: latitude, longitude: longitude)

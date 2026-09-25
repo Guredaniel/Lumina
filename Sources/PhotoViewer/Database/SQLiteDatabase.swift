@@ -83,6 +83,8 @@ final class SQLiteDatabase: @unchecked Sendable {
             is_video INTEGER NOT NULL DEFAULT 0,
             video_path TEXT,
             exif_json TEXT,
+            latitude REAL,
+            longitude REAL,
             is_favorite INTEGER NOT NULL DEFAULT 0
         );
         """
@@ -109,9 +111,34 @@ final class SQLiteDatabase: @unchecked Sendable {
         """
         
         executeRaw(createPhotosTable, db: db)
+        ensurePhotoLocationColumns(db: db)
         executeRaw(createIndexes, db: db)
         executeRaw(createDirectoriesTable, db: db)
         executeRaw(createLocationCacheTable, db: db)
+    }
+
+    private func ensurePhotoLocationColumns(db: OpaquePointer) {
+        let existingColumns = Set(tableColumns(for: "photos", db: db))
+        if !existingColumns.contains("latitude") {
+            executeRaw("ALTER TABLE photos ADD COLUMN latitude REAL;", db: db)
+        }
+        if !existingColumns.contains("longitude") {
+            executeRaw("ALTER TABLE photos ADD COLUMN longitude REAL;", db: db)
+        }
+    }
+
+    private func tableColumns(for table: String, db: OpaquePointer) -> [String] {
+        let sql = "PRAGMA table_info(\(table));"
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(statement) }
+        var columns: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if let nameCStr = sqlite3_column_text(statement, 1) {
+                columns.append(String(cString: nameCStr))
+            }
+        }
+        return columns
     }
 
     func cachedLocationName(latitude: Double, longitude: Double) -> String? {
@@ -214,9 +241,9 @@ final class SQLiteDatabase: @unchecked Sendable {
             let sql = """
             INSERT INTO photos (
                 url_path, filename, date_taken, file_modified_date, file_size,
-                is_video, video_path, exif_json, is_favorite
+                is_video, video_path, exif_json, latitude, longitude, is_favorite
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 COALESCE((SELECT is_favorite FROM photos WHERE url_path = ?), 0)
             )
             ON CONFLICT(url_path) DO UPDATE SET
@@ -226,7 +253,9 @@ final class SQLiteDatabase: @unchecked Sendable {
                 file_size = excluded.file_size,
                 is_video = excluded.is_video,
                 video_path = excluded.video_path,
-                exif_json = excluded.exif_json;
+                exif_json = excluded.exif_json,
+                latitude = excluded.latitude,
+                longitude = excluded.longitude;
             """
             
             var statement: OpaquePointer?
@@ -270,9 +299,20 @@ final class SQLiteDatabase: @unchecked Sendable {
                 } else {
                     sqlite3_bind_null(statement, 8)
                 }
+
+                if let latitude = photo.latitude {
+                    sqlite3_bind_double(statement, 9, latitude)
+                } else {
+                    sqlite3_bind_null(statement, 9)
+                }
+                if let longitude = photo.longitude {
+                    sqlite3_bind_double(statement, 10, longitude)
+                } else {
+                    sqlite3_bind_null(statement, 10)
+                }
                 
                 // For subquery COALESCE:
-                sqlite3_bind_text(statement, 9, (path as NSString).utf8String, -1, nil)
+                sqlite3_bind_text(statement, 11, (path as NSString).utf8String, -1, nil)
                 
                 if sqlite3_step(statement) != SQLITE_DONE {
                     print("SQLiteDatabase: error inserting \(path)")
@@ -342,10 +382,10 @@ final class SQLiteDatabase: @unchecked Sendable {
             let notPairedVideoCondition = "NOT (is_video = 1 AND LOWER(url_path) IN (SELECT LOWER(video_path) FROM photos WHERE video_path IS NOT NULL))"
             
             if dirPaths.isEmpty {
-                sql = "SELECT url_path, filename, date_taken, is_video, video_path, exif_json FROM photos WHERE \(notPairedVideoCondition) ORDER BY date_taken DESC;"
+                sql = "SELECT url_path, filename, date_taken, is_video, video_path, exif_json, latitude, longitude FROM photos WHERE \(notPairedVideoCondition) ORDER BY date_taken DESC;"
             } else {
                 let clauses = Array(repeating: "url_path LIKE ? || '%'", count: dirPaths.count).joined(separator: " OR ")
-                sql = "SELECT url_path, filename, date_taken, is_video, video_path, exif_json FROM photos WHERE (\(clauses)) AND \(notPairedVideoCondition) ORDER BY date_taken DESC;"
+                sql = "SELECT url_path, filename, date_taken, is_video, video_path, exif_json, latitude, longitude FROM photos WHERE (\(clauses)) AND \(notPairedVideoCondition) ORDER BY date_taken DESC;"
             }
             
             var statement: OpaquePointer?
@@ -484,11 +524,16 @@ final class SQLiteDatabase: @unchecked Sendable {
                 exifMetadata = dict
             }
         }
+
+        let latitude = sqlite3_column_type(statement, 6) == SQLITE_NULL ? nil : sqlite3_column_double(statement, 6)
+        let longitude = sqlite3_column_type(statement, 7) == SQLITE_NULL ? nil : sqlite3_column_double(statement, 7)
         
         return Photo(
             url: url,
             date: date,
             exifMetadata: exifMetadata,
+            latitude: latitude,
+            longitude: longitude,
             videoURL: videoURL,
             isVideo: isVideo
         )

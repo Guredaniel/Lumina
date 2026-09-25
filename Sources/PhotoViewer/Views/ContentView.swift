@@ -88,9 +88,10 @@ struct ContentView: View {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(trip.title)
-                                    Text(trip.photoCountLabel)
+                                    Text(trip.dateRange)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                        .lineLimit(1)
                                 }
                             } icon: {
                                 Image(systemName: viewModel.iconName(for: trip))
