@@ -21,6 +21,28 @@ struct SettingsView: View {
                 
                 Toggle("Show Filenames", isOn: $appSettings.showFilenames)
                 Toggle("Enable Live Photos", isOn: $appSettings.enableLivePhotos)
+
+                Section("Automatic Trips") {
+                    Toggle("Detect Trips Automatically", isOn: $appSettings.automaticTripDetection)
+
+                    Stepper(value: $appSettings.tripMinimumPhotos, in: 2...50) {
+                        Text("Minimum Photos: \(appSettings.tripMinimumPhotos)")
+                    }
+
+                    Stepper(value: $appSettings.tripLocationRadius, in: 5...500, step: 5) {
+                        Text("Location Radius: \(Int(appSettings.tripLocationRadius)) km")
+                    }
+
+                    Stepper(value: $appSettings.tripMaximumTimeGap, in: 6...168, step: 6) {
+                        Text("Maximum Time Gap: \(Int(appSettings.tripMaximumTimeGap)) hours")
+                    }
+
+                    if viewModel.hiddenTripCount > 0 {
+                        Button("Show Hidden Trips") {
+                            viewModel.restoreHiddenTrips()
+                        }
+                    }
+                }
                 
                 if appSettings.enableLivePhotos {
                     Picker("Live Playback:", selection: $appSettings.livePhotoPlaybackMode) {
@@ -90,6 +112,18 @@ struct SettingsView: View {
                 Label("Directories", systemImage: "folder")
             }
             
+        }
+        .onChange(of: appSettings.automaticTripDetection) { _ in
+            viewModel.refreshTripAlbums()
+        }
+        .onChange(of: appSettings.tripMinimumPhotos) { _ in
+            viewModel.refreshTripAlbums()
+        }
+        .onChange(of: appSettings.tripLocationRadius) { _ in
+            viewModel.refreshTripAlbums()
+        }
+        .onChange(of: appSettings.tripMaximumTimeGap) { _ in
+            viewModel.refreshTripAlbums()
         }
     }
 }

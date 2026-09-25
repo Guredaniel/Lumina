@@ -12,6 +12,16 @@ enum AppConstants {
         static let showFilenames = "showFilenames"
         static let enableLivePhotos = "enableLivePhotos"
         static let livePhotoPlaybackMode = "livePhotoPlaybackMode"
+        static let automaticTripDetection = "automaticTripDetection"
+        static let tripMinimumPhotos = "tripMinimumPhotos"
+        static let tripLocationRadius = "tripLocationRadius"
+        static let tripMaximumTimeGap = "tripMaximumTimeGap"
+        static let tripRenamedTitles = "tripRenamedTitles"
+        static let hiddenTripIDs = "hiddenTripIDs"
+        static let combinedTripGroups = "combinedTripGroups"
+        static let addedTripPhotoPaths = "addedTripPhotoPaths"
+        static let removedTripPhotoPaths = "removedTripPhotoPaths"
+        static let tripIcons = "tripIcons"
     }
     
     // MARK: - Image Format Support

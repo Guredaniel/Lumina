@@ -32,6 +32,30 @@ class AppSettings: ObservableObject {
             UserDefaults.standard.set(livePhotoPlaybackMode, forKey: AppConstants.UserDefaultsKeys.livePhotoPlaybackMode)
         }
     }
+
+    @Published var automaticTripDetection: Bool {
+        didSet {
+            UserDefaults.standard.set(automaticTripDetection, forKey: AppConstants.UserDefaultsKeys.automaticTripDetection)
+        }
+    }
+
+    @Published var tripMinimumPhotos: Int {
+        didSet {
+            UserDefaults.standard.set(tripMinimumPhotos, forKey: AppConstants.UserDefaultsKeys.tripMinimumPhotos)
+        }
+    }
+
+    @Published var tripLocationRadius: Double {
+        didSet {
+            UserDefaults.standard.set(tripLocationRadius, forKey: AppConstants.UserDefaultsKeys.tripLocationRadius)
+        }
+    }
+
+    @Published var tripMaximumTimeGap: Double {
+        didSet {
+            UserDefaults.standard.set(tripMaximumTimeGap, forKey: AppConstants.UserDefaultsKeys.tripMaximumTimeGap)
+        }
+    }
     
     // MARK: - Thumbnail Settings
     var thumbnailSize: CGSize {
@@ -57,6 +81,10 @@ class AppSettings: ObservableObject {
         self.enableLivePhotos = defaults.object(forKey: AppConstants.UserDefaultsKeys.enableLivePhotos) as? Bool ?? true
         // Default live photo playback to play once for a less intrusive UX
         self.livePhotoPlaybackMode = defaults.string(forKey: AppConstants.UserDefaultsKeys.livePhotoPlaybackMode) ?? "once"
+        self.automaticTripDetection = defaults.object(forKey: AppConstants.UserDefaultsKeys.automaticTripDetection) as? Bool ?? true
+        self.tripMinimumPhotos = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripMinimumPhotos) as? Int ?? 5
+        self.tripLocationRadius = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripLocationRadius) as? Double ?? 75
+        self.tripMaximumTimeGap = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripMaximumTimeGap) as? Double ?? 36
     }
     
     // MARK: - Reset to Defaults
@@ -65,5 +93,9 @@ class AppSettings: ObservableObject {
         showFilenames = false
         enableLivePhotos = true
         livePhotoPlaybackMode = "once"
+        automaticTripDetection = true
+        tripMinimumPhotos = 5
+        tripLocationRadius = 75
+        tripMaximumTimeGap = 36
     }
 }

@@ -4,18 +4,21 @@ struct PhotoGridView: View {
     let title: String
     let photos: [Photo]
     @ObservedObject var viewModel: PhotoViewModel
+    let tripID: String?
     @ObservedObject private var appSettings = AppSettings.shared
     
     init(month: PhotoMonth, viewModel: PhotoViewModel) {
         self.title = month.monthYearString
         self.photos = month.photos
         self.viewModel = viewModel
+        self.tripID = nil
     }
     
-    init(title: String, photos: [Photo], viewModel: PhotoViewModel) {
+    init(title: String, photos: [Photo], viewModel: PhotoViewModel, tripID: String? = nil) {
         self.title = title
         self.photos = photos
         self.viewModel = viewModel
+        self.tripID = tripID
     }
     
     private var columns: [GridItem] {
@@ -36,7 +39,7 @@ struct PhotoGridView: View {
             
             LazyVGrid(columns: columns, spacing: AppConstants.GridDisplay.gridSpacing) {
                 ForEach(photos, id: \.url) { photo in
-                    PhotoThumbnailView(photo: photo, viewModel: viewModel)
+                    PhotoThumbnailView(photo: photo, viewModel: viewModel, tripID: tripID)
                 }
             }
             .padding(.horizontal, AppConstants.GridDisplay.gridPadding)
@@ -48,15 +51,17 @@ struct PhotoGridView: View {
 struct PhotoThumbnailView: View {
     let photo: Photo
     @ObservedObject var viewModel: PhotoViewModel
+    let tripID: String?
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var thumbnail: NSImage?
     @State private var isHovered = false
     @State private var loadError: Bool = false
     @State private var loadingTask: Task<Void, Never>?
     
-    init(photo: Photo, viewModel: PhotoViewModel) {
+    init(photo: Photo, viewModel: PhotoViewModel, tripID: String? = nil) {
         self.photo = photo
         self.viewModel = viewModel
+        self.tripID = tripID
         
         // Synchronous cache check: If the image is already cached, 
         // show it IMMEDIATELY to prevent the loading flicker.
@@ -165,6 +170,20 @@ struct PhotoThumbnailView: View {
                 
                 Button(action: showInFinder) {
                     Label("Show in Finder", systemImage: "folder")
+                }
+
+                Menu("Add to Trip...", systemImage: "plus.rectangle.on.rectangle") {
+                    ForEach(viewModel.tripAlbums.filter { $0.id != tripID }) { trip in
+                        Button(trip.title) {
+                            viewModel.addPhoto(photo, toTripWithID: trip.id)
+                        }
+                    }
+                }
+
+                if let tripID {
+                    Button("Remove from Trip", systemImage: "minus.rectangle") {
+                        viewModel.removePhoto(photo, fromTripWithID: tripID)
+                    }
                 }
                 
                 Divider()

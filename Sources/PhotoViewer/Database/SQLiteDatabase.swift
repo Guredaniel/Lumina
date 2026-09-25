@@ -99,10 +99,61 @@ final class SQLiteDatabase: @unchecked Sendable {
             last_scan_date REAL NOT NULL
         );
         """
+
+        let createLocationCacheTable = """
+        CREATE TABLE IF NOT EXISTS location_cache (
+            coordinate_key TEXT PRIMARY KEY,
+            place_name TEXT NOT NULL,
+            cached_date REAL NOT NULL
+        );
+        """
         
         executeRaw(createPhotosTable, db: db)
         executeRaw(createIndexes, db: db)
         executeRaw(createDirectoriesTable, db: db)
+        executeRaw(createLocationCacheTable, db: db)
+    }
+
+    func cachedLocationName(latitude: Double, longitude: Double) -> String? {
+        queue.sync {
+            guard let db = self.db else { return nil }
+            let key = Self.locationCacheKey(latitude: latitude, longitude: longitude)
+            let sql = "SELECT place_name FROM location_cache WHERE coordinate_key = ?;"
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_text(statement, 1, (key as NSString).utf8String, -1, nil)
+            guard sqlite3_step(statement) == SQLITE_ROW,
+                  let nameCStr = sqlite3_column_text(statement, 0) else { return nil }
+            return String(cString: nameCStr)
+        }
+    }
+
+    func cacheLocationName(_ name: String, latitude: Double, longitude: Double) {
+        queue.sync {
+            guard let db = self.db else { return }
+            let key = Self.locationCacheKey(latitude: latitude, longitude: longitude)
+            let sql = """
+            INSERT INTO location_cache (coordinate_key, place_name, cached_date)
+            VALUES (?, ?, ?)
+            ON CONFLICT(coordinate_key) DO UPDATE SET
+                place_name = excluded.place_name,
+                cached_date = excluded.cached_date;
+            """
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_text(statement, 1, (key as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(statement, 2, (name as NSString).utf8String, -1, nil)
+            sqlite3_bind_double(statement, 3, Date().timeIntervalSince1970)
+            sqlite3_step(statement)
+        }
+    }
+
+    private static func locationCacheKey(latitude: Double, longitude: Double) -> String {
+        let roundedLatitude = Int((latitude * 10_000).rounded())
+        let roundedLongitude = Int((longitude * 10_000).rounded())
+        return "\(roundedLatitude),\(roundedLongitude)"
     }
     
     @discardableResult

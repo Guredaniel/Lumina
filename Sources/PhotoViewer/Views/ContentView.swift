@@ -8,11 +8,25 @@ enum SidebarSelection: Hashable {
     case sourceMonth(URL, String)
     case year(Int)
     case month(String)
+    case trip(String)
 }
 
 struct ContentView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @State private var selection: SidebarSelection? = .allPhotos
+    @State private var tripToRename: TripAlbum?
+    @State private var renameText = ""
+
+    private let tripIconOptions = [
+        ("airplane", "Airplane"),
+        ("map", "Map"),
+        ("camera", "Camera"),
+        ("mountain.2", "Mountains"),
+        ("beach.umbrella", "Beach"),
+        ("building.2", "City"),
+        ("figure.hiking", "Hiking"),
+        ("fork.knife", "Food")
+    ]
     
     private var validatedSelection: SidebarSelection {
         guard let selection = selection else { return .allPhotos }
@@ -28,6 +42,8 @@ struct ContentView: View {
             return years[year] != nil ? selection : .allPhotos
         case .sourceMonth(let directory, let id):
             return sourcePhotoMonth(withID: id, directory: directory) != nil ? selection : .allPhotos
+        case .trip(let id):
+            return viewModel.tripAlbum(withID: id) != nil ? selection : .allPhotos
         default:
             return selection
         }
@@ -62,6 +78,57 @@ struct ContentView: View {
                         ForEach(viewModel.selectedDirectories, id: \.self) { directory in
                             Label(directory.lastPathComponent, systemImage: "folder")
                                 .tag(SidebarSelection.source(directory))
+                        }
+                    }
+                }
+
+                if !viewModel.tripAlbums.isEmpty {
+                    Section(header: Text("Trips")) {
+                        ForEach(viewModel.tripAlbums) { trip in
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(trip.title)
+                                    Text(trip.photoCountLabel)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: viewModel.iconName(for: trip))
+                                    .foregroundStyle(.secondary)
+                            }
+                                .tag(SidebarSelection.trip(trip.id))
+                                .contextMenu {
+                                    Button("Rename Trip", systemImage: "pencil") {
+                                        renameText = trip.title
+                                        tripToRename = trip
+                                    }
+                                    Menu("Change Icon...", systemImage: "paintpalette") {
+                                        ForEach(tripIconOptions, id: \.0) { iconName, label in
+                                            Button {
+                                                viewModel.setIcon(iconName, forTripWithID: trip.id)
+                                            } label: {
+                                                Label(label, systemImage: iconName)
+                                            }
+                                        }
+                                    }
+                                    if viewModel.tripAlbums.count > 1 {
+                                        Menu("Combine with...", systemImage: "rectangle.2.swap") {
+                                            ForEach(viewModel.tripAlbums.filter { $0.id != trip.id }) { otherTrip in
+                                                Button(otherTrip.title) {
+                                                    viewModel.combineTrips(withID: trip.id, and: otherTrip.id)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if trip.isCombined {
+                                        Button("Separate into Trips", systemImage: "rectangle.2.arrowtriangle.2.outward") {
+                                            viewModel.separateTrip(withID: trip.id)
+                                        }
+                                    }
+                                    Button("Hide Trip", systemImage: "eye.slash") {
+                                        viewModel.hideTrip(withID: trip.id)
+                                    }
+                                }
                         }
                     }
                 }
@@ -156,6 +223,21 @@ struct ContentView: View {
                 selection = validatedSelection
             }
         }
+        .alert("Rename Trip", isPresented: Binding(
+            get: { tripToRename != nil },
+            set: { isPresented in
+                if !isPresented { tripToRename = nil }
+            }
+        )) {
+            TextField("Trip name", text: $renameText)
+            Button("Cancel", role: .cancel) { tripToRename = nil }
+            Button("Rename") {
+                if let tripToRename {
+                    viewModel.renameTrip(withID: tripToRename.id, title: renameText)
+                }
+                tripToRename = nil
+            }
+        }
     }
     
     @ViewBuilder
@@ -226,6 +308,12 @@ struct ContentView: View {
                         } else {
                             noContentView(message: "No photos were found in \(directory.lastPathComponent) for the selected month.")
                         }
+                    case .trip(let id):
+                        if let trip = viewModel.tripAlbum(withID: id) {
+                            PhotoGridView(title: "\(trip.title) · \(trip.dateRange)", photos: trip.photos, viewModel: viewModel, tripID: trip.id)
+                        } else {
+                            noContentView(message: "This trip is no longer available.")
+                        }
                     }
                 }
             }
@@ -249,6 +337,8 @@ struct ContentView: View {
             return "Photos from \(year)"
         case .month(let id):
             return viewModel.photoMonth(withID: id)?.monthYearString ?? "Photos"
+        case .trip(let id):
+            return viewModel.tripAlbum(withID: id)?.title ?? "Trip"
         }
     }
 

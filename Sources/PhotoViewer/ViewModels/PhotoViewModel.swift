@@ -18,18 +18,33 @@ class PhotoViewModel: ObservableObject {
     @Published var sortedYears: [Int] = []
     @Published var favoritePhotos: [Photo] = []
     @Published var allPhotosFlat: [Photo] = []
+    @Published var tripAlbums: [TripAlbum] = []
     
     // MARK: - Private Managers
     private let scanCoordinator: ScanCoordinator
     private let directoryManager: DirectoryManager
     private let favoriteManager: FavoriteManager
     private var preCachingTask: Task<Void, Never>? = nil
+    private var renamedTripTitles: [String: String]
+    private var hiddenTripIDs: Set<String>
+    private var combinedTripGroups: [[String]]
+    private var addedTripPhotoPaths: [String: Set<String>]
+    private var removedTripPhotoPaths: [String: Set<String>]
+    private var tripIcons: [String: String]
+
+    var hiddenTripCount: Int { hiddenTripIDs.count }
     
     // MARK: - Initialization
     init() {
         scanCoordinator = ScanCoordinator()
         directoryManager = DirectoryManager()
         favoriteManager = FavoriteManager()
+        renamedTripTitles = UserDefaults.standard.dictionary(forKey: AppConstants.UserDefaultsKeys.tripRenamedTitles) as? [String: String] ?? [:]
+        hiddenTripIDs = Set(UserDefaults.standard.stringArray(forKey: AppConstants.UserDefaultsKeys.hiddenTripIDs) ?? [])
+        combinedTripGroups = UserDefaults.standard.array(forKey: AppConstants.UserDefaultsKeys.combinedTripGroups) as? [[String]] ?? []
+        addedTripPhotoPaths = Self.loadPathSets(forKey: AppConstants.UserDefaultsKeys.addedTripPhotoPaths)
+        removedTripPhotoPaths = Self.loadPathSets(forKey: AppConstants.UserDefaultsKeys.removedTripPhotoPaths)
+        tripIcons = UserDefaults.standard.dictionary(forKey: AppConstants.UserDefaultsKeys.tripIcons) as? [String: String] ?? [:]
         
         // Load persisted state
         directoryManager.loadDirectories()
@@ -40,6 +55,7 @@ class PhotoViewModel: ObservableObject {
         favoritePaths = favoriteManager.favoritePaths
         loadPhotosFromDatabase()
         updateDerivedData()
+        refreshTripAlbums()
     }
     
     // MARK: - Directory Management (delegates to DirectoryManager)
@@ -57,6 +73,7 @@ class PhotoViewModel: ObservableObject {
         selectedDirectories = directoryManager.selectedDirectories
         self.photoMonths = SQLiteDatabase.shared.fetchPhotoMonths(forDirectories: selectedDirectories)
         updateDerivedData()
+        refreshTripAlbums()
     }
     
     func loadDirectories() {
@@ -104,6 +121,7 @@ class PhotoViewModel: ObservableObject {
                     guard let self = self else { return }
                     self.photoMonths = months
                     self.updateDerivedData()
+                    self.refreshTripAlbums()
                     self.startBackgroundThumbnailCaching()
                     self.isLoading = false
                     self.isScanning = false
@@ -150,6 +168,195 @@ class PhotoViewModel: ObservableObject {
         self.groupedYears = Dictionary(grouping: months, by: { $0.year })
         self.sortedYears = groupedYears.keys.sorted(by: >)
         self.favoritePhotos = allPhotosFlat.filter { paths.contains($0.url.path) }
+    }
+
+    func refreshTripAlbums() {
+        let settings = AppSettings.shared
+        guard settings.automaticTripDetection else {
+            tripAlbums = []
+            return
+        }
+
+        let photos = allPhotosFlat
+        let detector = TripDetectionService(
+            minimumPhotos: max(2, settings.tripMinimumPhotos),
+            locationRadiusKilometers: max(1, settings.tripLocationRadius),
+            maximumTimeGapHours: max(1, settings.tripMaximumTimeGap)
+        )
+
+        let albums = detector.detectTrips(in: photos)
+        tripAlbums = applyTripPreferences(to: albums, allPhotos: photos)
+
+        Task { [weak self] in
+            var enrichedAlbums: [TripAlbum] = []
+            for album in albums {
+                guard let locationName = await detector.locationName(for: album.photos) else {
+                    enrichedAlbums.append(album)
+                    continue
+                }
+                enrichedAlbums.append(TripAlbum(
+                    id: album.id,
+                    title: "Trip to \(locationName)",
+                    startDate: album.startDate,
+                    endDate: album.endDate,
+                    locationName: locationName,
+                    photos: album.photos
+                ))
+            }
+            guard let self else { return }
+            self.tripAlbums = self.applyTripPreferences(to: enrichedAlbums, allPhotos: photos)
+        }
+    }
+
+    func tripAlbum(withID id: String) -> TripAlbum? {
+        tripAlbums.first { $0.id == id }
+    }
+
+    func iconName(for trip: TripAlbum) -> String {
+        tripIcons[trip.id] ?? (trip.isCombined ? "rectangle.stack.fill" : "airplane")
+    }
+
+    func setIcon(_ iconName: String, forTripWithID tripID: String) {
+        guard tripAlbums.contains(where: { $0.id == tripID }) else { return }
+        tripIcons[tripID] = iconName
+        UserDefaults.standard.set(tripIcons, forKey: AppConstants.UserDefaultsKeys.tripIcons)
+        objectWillChange.send()
+    }
+
+    func renameTrip(withID id: String, title: String) {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty, tripAlbums.contains(where: { $0.id == id }) else { return }
+        renamedTripTitles[id] = trimmedTitle
+        UserDefaults.standard.set(renamedTripTitles, forKey: AppConstants.UserDefaultsKeys.tripRenamedTitles)
+        refreshTripAlbums()
+    }
+
+    func hideTrip(withID id: String) {
+        guard tripAlbums.contains(where: { $0.id == id }) else { return }
+        hiddenTripIDs.insert(id)
+        UserDefaults.standard.set(Array(hiddenTripIDs), forKey: AppConstants.UserDefaultsKeys.hiddenTripIDs)
+        tripAlbums.removeAll { $0.id == id }
+    }
+
+    func restoreHiddenTrips() {
+        hiddenTripIDs.removeAll()
+        UserDefaults.standard.removeObject(forKey: AppConstants.UserDefaultsKeys.hiddenTripIDs)
+        refreshTripAlbums()
+    }
+
+    func addPhoto(_ photo: Photo, toTripWithID tripID: String) {
+        guard tripAlbums.contains(where: { $0.id == tripID }) else { return }
+        addedTripPhotoPaths[tripID, default: []].insert(photo.url.path)
+        removedTripPhotoPaths[tripID, default: []].remove(photo.url.path)
+        persistTripMembership()
+        refreshTripAlbums()
+    }
+
+    func removePhoto(_ photo: Photo, fromTripWithID tripID: String) {
+        guard let trip = tripAlbum(withID: tripID), trip.photos.contains(where: { $0.url == photo.url }) else { return }
+        addedTripPhotoPaths[tripID, default: []].remove(photo.url.path)
+        removedTripPhotoPaths[tripID, default: []].insert(photo.url.path)
+        persistTripMembership()
+        refreshTripAlbums()
+    }
+
+    func combineTrips(withID firstID: String, and secondID: String) {
+        guard firstID != secondID,
+              tripAlbums.contains(where: { $0.id == firstID }),
+              tripAlbums.contains(where: { $0.id == secondID }) else { return }
+
+        let firstMembers = memberIDs(for: firstID)
+        let secondMembers = memberIDs(for: secondID)
+        let mergedMembers = Array(Set(firstMembers + secondMembers)).sorted()
+        combinedTripGroups.removeAll { group in
+            !Set(group).isDisjoint(with: mergedMembers)
+        }
+        combinedTripGroups.append(mergedMembers)
+        let combinedID = combinedTripID(for: mergedMembers)
+        let memberTitles = [firstID, secondID].compactMap { id in
+            tripAlbums.first(where: { $0.id == id })?.title
+        }.reduce(into: [String]()) { result, title in
+            if !result.contains(title) { result.append(title) }
+        }
+        if renamedTripTitles[combinedID] == nil, !memberTitles.isEmpty {
+            renamedTripTitles[combinedID] = memberTitles.joined(separator: " + ")
+            UserDefaults.standard.set(renamedTripTitles, forKey: AppConstants.UserDefaultsKeys.tripRenamedTitles)
+        }
+        UserDefaults.standard.set(combinedTripGroups, forKey: AppConstants.UserDefaultsKeys.combinedTripGroups)
+        refreshTripAlbums()
+    }
+
+    func separateTrip(withID id: String) {
+        guard let index = combinedTripGroups.firstIndex(where: { combinedTripID(for: $0) == id }) else { return }
+        combinedTripGroups.remove(at: index)
+        UserDefaults.standard.set(combinedTripGroups, forKey: AppConstants.UserDefaultsKeys.combinedTripGroups)
+        refreshTripAlbums()
+    }
+
+    private func applyTripPreferences(to albums: [TripAlbum], allPhotos: [Photo]) -> [TripAlbum] {
+        let availableAlbums = albums.compactMap { album -> TripAlbum? in
+            guard !hiddenTripIDs.contains(album.id) else { return nil }
+            let membershipAdjusted = applyMembershipOverrides(to: album, allPhotos: allPhotos)
+            return renamedAlbum(membershipAdjusted)
+        }
+        let albumsByID = Dictionary(uniqueKeysWithValues: availableAlbums.map { ($0.id, $0) })
+        var consumedIDs = Set<String>()
+        var combinedAlbums: [TripAlbum] = []
+
+        for group in combinedTripGroups {
+            let members = group.compactMap { albumsByID[$0] }
+            guard members.count >= 2 else { continue }
+
+            let uniquePhotos = Dictionary(uniqueKeysWithValues: members.flatMap(\.photos).map { ($0.url, $0) })
+            let photos = uniquePhotos.values.sorted { $0.date > $1.date }
+            guard let firstPhoto = photos.last, let lastPhoto = photos.first else { continue }
+            let id = combinedTripID(for: group)
+            let memberTitles = members.map(\.title).reduce(into: [String]()) { result, title in
+                if !result.contains(title) { result.append(title) }
+            }
+            let defaultTitle = memberTitles.isEmpty ? "Combined Trip" : memberTitles.joined(separator: " + ")
+            let title = renamedTripTitles[id] ?? defaultTitle
+            let locations = members.compactMap(\.locationName).reduce(into: [String]()) { result, location in
+                if !result.contains(location) { result.append(location) }
+            }
+            let combinedAlbum = TripAlbum(id: id, title: title, startDate: firstPhoto.date, endDate: lastPhoto.date, locationName: locations.isEmpty ? nil : locations.joined(separator: ", "), photos: photos)
+            combinedAlbums.append(applyMembershipOverrides(to: combinedAlbum, allPhotos: allPhotos))
+            consumedIDs.formUnion(group)
+        }
+
+        return (combinedAlbums + availableAlbums.filter { !consumedIDs.contains($0.id) }).sorted { $0.startDate > $1.startDate }
+    }
+
+    private func renamedAlbum(_ album: TripAlbum) -> TripAlbum {
+        guard let title = renamedTripTitles[album.id] else { return album }
+        return TripAlbum(id: album.id, title: title, startDate: album.startDate, endDate: album.endDate, locationName: album.locationName, photos: album.photos)
+    }
+
+    private func applyMembershipOverrides(to album: TripAlbum, allPhotos: [Photo]) -> TripAlbum {
+        let removedPaths = removedTripPhotoPaths[album.id, default: []]
+        let addedPaths = addedTripPhotoPaths[album.id, default: []]
+        let existingPaths = Set(album.photos.map(\.url.path))
+        let addedPhotos = allPhotos.filter { addedPaths.contains($0.url.path) && !existingPaths.contains($0.url.path) }
+        let photos = (album.photos.filter { !removedPaths.contains($0.url.path) } + addedPhotos).sorted { $0.date > $1.date }
+        return TripAlbum(id: album.id, title: album.title, startDate: photos.last?.date ?? album.startDate, endDate: photos.first?.date ?? album.endDate, locationName: album.locationName, photos: photos)
+    }
+
+    private func persistTripMembership() {
+        UserDefaults.standard.set(addedTripPhotoPaths.mapValues(Array.init), forKey: AppConstants.UserDefaultsKeys.addedTripPhotoPaths)
+        UserDefaults.standard.set(removedTripPhotoPaths.mapValues(Array.init), forKey: AppConstants.UserDefaultsKeys.removedTripPhotoPaths)
+    }
+
+    private static func loadPathSets(forKey key: String) -> [String: Set<String>] {
+        let values = UserDefaults.standard.dictionary(forKey: key) as? [String: [String]] ?? [:]
+        return values.mapValues(Set.init)
+    }
+
+    private func memberIDs(for id: String) -> [String] {
+        combinedTripGroups.first(where: { combinedTripID(for: $0) == id }) ?? [id]
+    }
+
+    private func combinedTripID(for members: [String]) -> String {
+        "combined:" + members.sorted().joined(separator: "|")
     }
     
     private func loadPhotosFromDatabase() {
@@ -219,6 +426,7 @@ class PhotoViewModel: ObservableObject {
             }
             
             updateDerivedData()
+            refreshTripAlbums()
             if selectedPhoto == photo {
                 selectedPhoto = nil
             }
@@ -230,6 +438,7 @@ class PhotoViewModel: ObservableObject {
     func clearPhotos() {
         preCachingTask?.cancel()
         photoMonths = []
+        tripAlbums = []
         updateDerivedData()
         selectedPhoto = nil
         errorMessage = nil
