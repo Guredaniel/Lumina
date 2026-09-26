@@ -166,55 +166,51 @@ struct SettingsView: View {
     }
 
     private var directorySettings: some View {
-        List {
-            Section("Photo Library Folders") {
-                if viewModel.selectedDirectories.isEmpty {
-                    ContentUnavailableView(
-                        "No Folders Added",
-                        systemImage: "folder.badge.plus",
-                        description: Text("Add a folder to include its photos in your library.")
-                    )
-                    .listRowSeparator(.hidden)
-                } else {
-                    ForEach(viewModel.selectedDirectories, id: \.self) { url in
-                        HStack(spacing: 12) {
-                            Image(systemName: "folder")
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 24)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(url.lastPathComponent)
-                                    .lineLimit(1)
-                                Text(url.path)
-                                    .font(.caption)
+        VStack(spacing: 0) {
+            Form {
+                Section("Photo Library Folders") {
+                    if viewModel.selectedDirectories.isEmpty {
+                        Text("No folders added yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(viewModel.selectedDirectories, id: \.self) { url in
+                            HStack(spacing: 12) {
+                                Image(systemName: "folder")
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
+                                    .frame(width: 20)
 
-                            Spacer(minLength: 8)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(url.lastPathComponent)
+                                        .lineLimit(1)
+                                    Text(url.path)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
 
-                            Button {
-                                viewModel.removeDirectory(url)
-                            } label: {
-                                Image(systemName: "minus.circle")
+                                Spacer(minLength: 8)
+
+                                Button(role: .destructive) {
+                                    viewModel.removeDirectory(url)
+                                } label: {
+                                    Image(systemName: "minus.circle")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Remove folder")
+                                .accessibilityLabel("Remove \(url.lastPathComponent)")
                             }
-                            .buttonStyle(.borderless)
-                            .help("Remove folder")
-                            .accessibilityLabel("Remove \(url.lastPathComponent)")
+                            .padding(.vertical, 3)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
             }
-        }
-        .listStyle(.inset)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            .formStyle(.grouped)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
             HStack {
-                Text("\(viewModel.selectedDirectories.count) folder\(viewModel.selectedDirectories.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 Spacer()
                 Button {
                     viewModel.addDirectory()
@@ -223,9 +219,8 @@ struct SettingsView: View {
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(.bar)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
         }
     }
 }
