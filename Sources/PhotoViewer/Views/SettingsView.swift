@@ -3,115 +3,27 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @ObservedObject private var appSettings = AppSettings.shared
-    
+    @State private var showingRestoreTrips = false
+    @State private var selectedHiddenTripIDs: Set<String> = []
+
     var body: some View {
         TabView {
-            Form {
-                Picker("Grid Columns:", selection: $appSettings.gridColumns) {
-                    Text("Auto").tag(0)
-                    Text("3 (Large)").tag(3)
-                    Text("4 (Medium)").tag(4)
-                    Text("6 (Small)").tag(6)
-                    Text("8 (Tiny)").tag(8)
+            generalSettings
+                .tabItem {
+                    Label("General", systemImage: "gearshape")
                 }
-                .pickerStyle(.menu)
-                .frame(width: 250)
-                
-                Spacer().frame(height: 10)
-                
-                Toggle("Show Filenames", isOn: $appSettings.showFilenames)
-                Toggle("Enable Live Photos", isOn: $appSettings.enableLivePhotos)
-
-                Section("Automatic Trips") {
-                    Toggle("Detect Trips Automatically", isOn: $appSettings.automaticTripDetection)
-
-                    Stepper(value: $appSettings.tripMinimumPhotos, in: 2...50) {
-                        Text("Minimum Photos: \(appSettings.tripMinimumPhotos)")
-                    }
-
-                    Stepper(value: $appSettings.tripLocationRadius, in: 5...500, step: 5) {
-                        Text("Location Radius: \(Int(appSettings.tripLocationRadius)) km")
-                    }
-
-                    Stepper(value: $appSettings.tripMaximumTimeGap, in: 6...168, step: 6) {
-                        Text("Maximum Time Gap: \(Int(appSettings.tripMaximumTimeGap)) hours")
-                    }
-
-                    if viewModel.hiddenTripCount > 0 {
-                        Button("Show Hidden Trips") {
-                            viewModel.restoreHiddenTrips()
-                        }
-                    }
+            tripSettings
+                .tabItem {
+                    Label("Trips", systemImage: "airplane")
                 }
-                
-                if appSettings.enableLivePhotos {
-                    Picker("Live Playback:", selection: $appSettings.livePhotoPlaybackMode) {
-                        Text("Loop").tag("loop")
-                        Text("Play Once").tag("once")
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: 250)
+            directorySettings
+                .tabItem {
+                    Label("Directories", systemImage: "folder")
                 }
-            }
-            .padding(40)
-            .frame(width: AppConstants.UI.settingsWindowWidth, height: AppConstants.UI.settingsWindowHeight)
-            .tabItem {
-                Label("General", systemImage: "gearshape")
-            }
-            
-            VStack(spacing: 0) {
-                if viewModel.selectedDirectories.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "folder.badge.questionmark")
-                            .font(.system(size: 32))
-                            .foregroundColor(.secondary)
-                        Text("No Directories")
-                            .font(.headline)
-                        Text("Add a directory to scan for photos.")
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List {
-                        ForEach(viewModel.selectedDirectories, id: \.self) { url in
-                            HStack {
-                                Image(systemName: "folder.fill")
-                                    .foregroundColor(.blue)
-                                Text(url.path)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Spacer()
-                                Button(action: {
-                                    viewModel.removeDirectory(url)
-                                }) {
-                                    Image(systemName: "trash")
-                                        .foregroundColor(.red)
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                    .listStyle(.inset)
-                }
-                
-                Divider()
-                
-                HStack {
-                    Spacer()
-                    Button(action: {
-                        viewModel.addDirectory()
-                    }) {
-                        Label("Add Directory...", systemImage: "plus")
-                    }
-                }
-                .padding()
-            }
-            .frame(width: 500, height: 300)
-            .tabItem {
-                Label("Directories", systemImage: "folder")
-            }
-            
+        }
+        .frame(minWidth: 560, minHeight: 460)
+        .sheet(isPresented: $showingRestoreTrips) {
+            restoreTripsSheet
         }
         .onChange(of: appSettings.automaticTripDetection) { _ in
             viewModel.refreshTripAlbums()
@@ -124,6 +36,196 @@ struct SettingsView: View {
         }
         .onChange(of: appSettings.tripMaximumTimeGap) { _ in
             viewModel.refreshTripAlbums()
+        }
+    }
+
+    private var generalSettings: some View {
+        Form {
+            Section("Appearance") {
+                Picker("Grid size", selection: $appSettings.gridColumns) {
+                    Text("Automatic").tag(0)
+                    Text("Large").tag(3)
+                    Text("Medium").tag(4)
+                    Text("Small").tag(6)
+                    Text("Compact").tag(8)
+                }
+                Toggle("Show filenames below photos", isOn: $appSettings.showFilenames)
+            }
+
+            Section("Live Photos") {
+                Toggle("Enable Live Photos", isOn: $appSettings.enableLivePhotos)
+                if appSettings.enableLivePhotos {
+                    Picker("Playback", selection: $appSettings.livePhotoPlaybackMode) {
+                        Text("Play once").tag("once")
+                        Text("Loop").tag("loop")
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+    }
+
+    private var tripSettings: some View {
+        Form {
+            Section("Automatic Albums") {
+                Toggle("Detect trips automatically", isOn: $appSettings.automaticTripDetection)
+            }
+
+            Section("Detection") {
+                Stepper(value: $appSettings.tripMinimumPhotos, in: 2...50) {
+                    LabeledContent("Minimum photos", value: "\(appSettings.tripMinimumPhotos)")
+                }
+                .disabled(!appSettings.automaticTripDetection)
+
+                LabeledContent("Location radius") {
+                    HStack(spacing: 12) {
+                        Slider(value: $appSettings.tripLocationRadius, in: 5...500, step: 5)
+                            .frame(maxWidth: 220)
+                        Text("\(Int(appSettings.tripLocationRadius)) km")
+                            .monospacedDigit()
+                            .frame(width: 56, alignment: .trailing)
+                    }
+                }
+                .disabled(!appSettings.automaticTripDetection)
+
+                LabeledContent("Maximum time between photos") {
+                    HStack(spacing: 12) {
+                        Slider(value: $appSettings.tripMaximumTimeGap, in: 6...168, step: 6)
+                            .frame(maxWidth: 220)
+                        Text("\(Int(appSettings.tripMaximumTimeGap)) hr")
+                            .monospacedDigit()
+                            .frame(width: 56, alignment: .trailing)
+                    }
+                }
+                .disabled(!appSettings.automaticTripDetection)
+            }
+
+            Section("Hidden Albums") {
+                if viewModel.hiddenTripCount > 0 {
+                    LabeledContent("Hidden trips", value: "\(viewModel.hiddenTripCount)")
+                    Button("Choose Trips to Restore…") {
+                        selectedHiddenTripIDs = []
+                        showingRestoreTrips = true
+                    }
+                } else {
+                    Text("No hidden trips")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+    }
+
+    private var restoreTripsSheet: some View {
+        NavigationStack {
+            List(viewModel.hiddenTripAlbums) { trip in
+                Toggle(isOn: selectionBinding(for: trip.id)) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(trip.title)
+                        Text(trip.dateRange)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+            }
+            .navigationTitle("Restore Hidden Trips")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showingRestoreTrips = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Restore Selected") {
+                        viewModel.restoreHiddenTrips(withIDs: selectedHiddenTripIDs)
+                        showingRestoreTrips = false
+                    }
+                    .disabled(selectedHiddenTripIDs.isEmpty)
+                }
+            }
+            .frame(minWidth: 420, minHeight: 320)
+        }
+    }
+
+    private func selectionBinding(for id: String) -> Binding<Bool> {
+        Binding(
+            get: { selectedHiddenTripIDs.contains(id) },
+            set: { isSelected in
+                if isSelected {
+                    selectedHiddenTripIDs.insert(id)
+                } else {
+                    selectedHiddenTripIDs.remove(id)
+                }
+            }
+        )
+    }
+
+    private var directorySettings: some View {
+        List {
+            Section("Photo Library Folders") {
+                if viewModel.selectedDirectories.isEmpty {
+                    ContentUnavailableView(
+                        "No Folders Added",
+                        systemImage: "folder.badge.plus",
+                        description: Text("Add a folder to include its photos in your library.")
+                    )
+                    .listRowSeparator(.hidden)
+                } else {
+                    ForEach(viewModel.selectedDirectories, id: \.self) { url in
+                        HStack(spacing: 12) {
+                            Image(systemName: "folder")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 24)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(url.lastPathComponent)
+                                    .lineLimit(1)
+                                Text(url.path)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Button {
+                                viewModel.removeDirectory(url)
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove folder")
+                            .accessibilityLabel("Remove \(url.lastPathComponent)")
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .listStyle(.inset)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                Text("\(viewModel.selectedDirectories.count) folder\(viewModel.selectedDirectories.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    viewModel.addDirectory()
+                } label: {
+                    Label("Add Folder…", systemImage: "plus")
+                }
+                .keyboardShortcut("o", modifiers: .command)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.bar)
         }
     }
 }

@@ -19,6 +19,7 @@ class PhotoViewModel: ObservableObject {
     @Published var favoritePhotos: [Photo] = []
     @Published var allPhotosFlat: [Photo] = []
     @Published var tripAlbums: [TripAlbum] = []
+    @Published var hiddenTripAlbums: [TripAlbum] = []
     
     // MARK: - Private Managers
     private let scanCoordinator: ScanCoordinator
@@ -31,8 +32,9 @@ class PhotoViewModel: ObservableObject {
     private var addedTripPhotoPaths: [String: Set<String>]
     private var removedTripPhotoPaths: [String: Set<String>]
     private var tripIcons: [String: String]
+    private var userCreatedAlbums: [UserCreatedAlbum]
 
-    var hiddenTripCount: Int { hiddenTripIDs.count }
+    var hiddenTripCount: Int { hiddenTripAlbums.count }
     
     // MARK: - Initialization
     init() {
@@ -45,6 +47,12 @@ class PhotoViewModel: ObservableObject {
         addedTripPhotoPaths = Self.loadPathSets(forKey: AppConstants.UserDefaultsKeys.addedTripPhotoPaths)
         removedTripPhotoPaths = Self.loadPathSets(forKey: AppConstants.UserDefaultsKeys.removedTripPhotoPaths)
         tripIcons = UserDefaults.standard.dictionary(forKey: AppConstants.UserDefaultsKeys.tripIcons) as? [String: String] ?? [:]
+        if let data = UserDefaults.standard.data(forKey: AppConstants.UserDefaultsKeys.userCreatedAlbums),
+           let albums = try? JSONDecoder().decode([UserCreatedAlbum].self, from: data) {
+            userCreatedAlbums = albums
+        } else {
+            userCreatedAlbums = []
+        }
         
         // Load persisted state
         directoryManager.loadDirectories()
@@ -172,11 +180,6 @@ class PhotoViewModel: ObservableObject {
 
     func refreshTripAlbums() {
         let settings = AppSettings.shared
-        guard settings.automaticTripDetection else {
-            tripAlbums = []
-            return
-        }
-
         let photos = allPhotosFlat
         let detector = TripDetectionService(
             minimumPhotos: max(2, settings.tripMinimumPhotos),
@@ -184,8 +187,10 @@ class PhotoViewModel: ObservableObject {
             maximumTimeGapHours: max(1, settings.tripMaximumTimeGap)
         )
 
-        let albums = detector.detectTrips(in: photos)
-        tripAlbums = applyTripPreferences(to: albums, allPhotos: photos)
+        let albums = settings.automaticTripDetection ? detector.detectTrips(in: photos) : []
+        updateTripAlbumState(albums, allPhotos: photos)
+
+        guard settings.automaticTripDetection else { return }
 
         Task { [weak self] in
             var enrichedAlbums: [TripAlbum] = []
@@ -204,7 +209,7 @@ class PhotoViewModel: ObservableObject {
                 ))
             }
             guard let self else { return }
-            self.tripAlbums = self.applyTripPreferences(to: enrichedAlbums, allPhotos: photos)
+            self.updateTripAlbumState(enrichedAlbums, allPhotos: photos)
         }
     }
 
@@ -213,7 +218,18 @@ class PhotoViewModel: ObservableObject {
     }
 
     func iconName(for trip: TripAlbum) -> String {
-        tripIcons[trip.id] ?? (trip.isCombined ? "rectangle.stack.fill" : "airplane")
+        tripIcons[trip.id] ?? (trip.isManual ? "folder.fill" : (trip.isCombined ? "rectangle.stack.fill" : "airplane"))
+    }
+
+    @discardableResult
+    func createAlbum(title: String) -> TripAlbum? {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return nil }
+        let record = UserCreatedAlbum(id: "manual:\(UUID().uuidString)", title: trimmedTitle, createdDate: Date())
+        userCreatedAlbums.append(record)
+        persistUserCreatedAlbums()
+        refreshTripAlbums()
+        return tripAlbum(withID: record.id)
     }
 
     func setIcon(_ iconName: String, forTripWithID tripID: String) {
@@ -239,8 +255,12 @@ class PhotoViewModel: ObservableObject {
     }
 
     func restoreHiddenTrips() {
-        hiddenTripIDs.removeAll()
-        UserDefaults.standard.removeObject(forKey: AppConstants.UserDefaultsKeys.hiddenTripIDs)
+        restoreHiddenTrips(withIDs: hiddenTripIDs)
+    }
+
+    func restoreHiddenTrips(withIDs ids: Set<String>) {
+        hiddenTripIDs.subtract(ids)
+        UserDefaults.standard.set(Array(hiddenTripIDs), forKey: AppConstants.UserDefaultsKeys.hiddenTripIDs)
         refreshTripAlbums()
     }
 
@@ -293,12 +313,32 @@ class PhotoViewModel: ObservableObject {
         refreshTripAlbums()
     }
 
-    private func applyTripPreferences(to albums: [TripAlbum], allPhotos: [Photo]) -> [TripAlbum] {
-        let availableAlbums = albums.compactMap { album -> TripAlbum? in
-            guard !hiddenTripIDs.contains(album.id) else { return nil }
+    private func updateTripAlbumState(_ albums: [TripAlbum], allPhotos: [Photo]) {
+        let allAlbums = applyTripPreferences(to: albums, allPhotos: allPhotos, includeHidden: true)
+        hiddenTripAlbums = allAlbums.filter { hiddenTripIDs.contains($0.id) }
+        tripAlbums = allAlbums.filter { !hiddenTripIDs.contains($0.id) }
+    }
+
+    private func applyTripPreferences(to albums: [TripAlbum], allPhotos: [Photo], includeHidden: Bool = false) -> [TripAlbum] {
+        let detectedAlbums = albums.compactMap { album -> TripAlbum? in
+            guard includeHidden || !hiddenTripIDs.contains(album.id) else { return nil }
             let membershipAdjusted = applyMembershipOverrides(to: album, allPhotos: allPhotos)
             return renamedAlbum(membershipAdjusted)
         }
+        let manualAlbums = userCreatedAlbums.compactMap { record -> TripAlbum? in
+            guard includeHidden || !hiddenTripIDs.contains(record.id) else { return nil }
+            let album = TripAlbum(
+                id: record.id,
+                title: renamedTripTitles[record.id] ?? record.title,
+                startDate: record.createdDate,
+                endDate: record.createdDate,
+                locationName: nil,
+                photos: [],
+                isManual: true
+            )
+            return applyMembershipOverrides(to: album, allPhotos: allPhotos)
+        }
+        let availableAlbums = detectedAlbums + manualAlbums
         let albumsByID = Dictionary(uniqueKeysWithValues: availableAlbums.map { ($0.id, $0) })
         var consumedIDs = Set<String>()
         var combinedAlbums: [TripAlbum] = []
@@ -325,6 +365,11 @@ class PhotoViewModel: ObservableObject {
         }
 
         return (combinedAlbums + availableAlbums.filter { !consumedIDs.contains($0.id) }).sorted { $0.startDate > $1.startDate }
+    }
+
+    private func persistUserCreatedAlbums() {
+        guard let data = try? JSONEncoder().encode(userCreatedAlbums) else { return }
+        UserDefaults.standard.set(data, forKey: AppConstants.UserDefaultsKeys.userCreatedAlbums)
     }
 
     private func renamedAlbum(_ album: TripAlbum) -> TripAlbum {

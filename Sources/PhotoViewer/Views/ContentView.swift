@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var selection: SidebarSelection? = .allPhotos
     @State private var tripToRename: TripAlbum?
     @State private var renameText = ""
+    @State private var isCreatingAlbum = false
+    @State private var newAlbumTitle = ""
 
     private let tripIconOptions = [
         ("airplane", "Airplane"),
@@ -82,55 +84,67 @@ struct ContentView: View {
                     }
                 }
 
-                if !viewModel.tripAlbums.isEmpty {
-                    Section(header: Text("Trips")) {
-                        ForEach(viewModel.tripAlbums) { trip in
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(trip.title)
-                                    Text(trip.dateRange)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            } icon: {
-                                Image(systemName: viewModel.iconName(for: trip))
+                Section {
+                    ForEach(viewModel.tripAlbums) { trip in
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(trip.title)
+                                Text(trip.photos.isEmpty ? "Empty album" : trip.dateRange)
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                             }
-                                .tag(SidebarSelection.trip(trip.id))
-                                .contextMenu {
-                                    Button("Rename Trip", systemImage: "pencil") {
-                                        renameText = trip.title
-                                        tripToRename = trip
-                                    }
-                                    Menu("Change Icon...", systemImage: "paintpalette") {
-                                        ForEach(tripIconOptions, id: \.0) { iconName, label in
-                                            Button {
-                                                viewModel.setIcon(iconName, forTripWithID: trip.id)
-                                            } label: {
-                                                Label(label, systemImage: iconName)
-                                            }
-                                        }
-                                    }
-                                    if viewModel.tripAlbums.count > 1 {
-                                        Menu("Combine with...", systemImage: "rectangle.2.swap") {
-                                            ForEach(viewModel.tripAlbums.filter { $0.id != trip.id }) { otherTrip in
-                                                Button(otherTrip.title) {
-                                                    viewModel.combineTrips(withID: trip.id, and: otherTrip.id)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if trip.isCombined {
-                                        Button("Separate into Trips", systemImage: "rectangle.2.arrowtriangle.2.outward") {
-                                            viewModel.separateTrip(withID: trip.id)
-                                        }
-                                    }
-                                    Button("Hide Trip", systemImage: "eye.slash") {
-                                        viewModel.hideTrip(withID: trip.id)
+                        } icon: {
+                            Image(systemName: viewModel.iconName(for: trip))
+                                .foregroundStyle(.secondary)
+                        }
+                        .tag(SidebarSelection.trip(trip.id))
+                        .contextMenu {
+                            Button("Rename Trip", systemImage: "pencil") {
+                                renameText = trip.title
+                                tripToRename = trip
+                            }
+                            Menu("Change Icon...", systemImage: "paintpalette") {
+                                ForEach(tripIconOptions, id: \.0) { iconName, label in
+                                    Button {
+                                        viewModel.setIcon(iconName, forTripWithID: trip.id)
+                                    } label: {
+                                        Label(label, systemImage: iconName)
                                     }
                                 }
+                            }
+                            if viewModel.tripAlbums.count > 1 {
+                                Menu("Combine with...", systemImage: "rectangle.2.swap") {
+                                    ForEach(viewModel.tripAlbums.filter { $0.id != trip.id }) { otherTrip in
+                                        Button(otherTrip.title) {
+                                            viewModel.combineTrips(withID: trip.id, and: otherTrip.id)
+                                        }
+                                    }
+                                }
+                            }
+                            if trip.isCombined {
+                                Button("Separate into Trips", systemImage: "rectangle.2.arrowtriangle.2.outward") {
+                                    viewModel.separateTrip(withID: trip.id)
+                                }
+                            }
+                            Button("Hide Trip", systemImage: "eye.slash") {
+                                viewModel.hideTrip(withID: trip.id)
+                            }
                         }
+                    }
+                } header: {
+                    HStack {
+                        Text("Trips & Albums")
+                        Spacer()
+                        Button {
+                            newAlbumTitle = ""
+                            isCreatingAlbum = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Create Album")
+                        .accessibilityLabel("Create Album")
                     }
                 }
 
@@ -239,6 +253,9 @@ struct ContentView: View {
                 tripToRename = nil
             }
         }
+        .sheet(isPresented: $isCreatingAlbum) {
+            createAlbumSheet
+        }
     }
     
     @ViewBuilder
@@ -311,7 +328,21 @@ struct ContentView: View {
                         }
                     case .trip(let id):
                         if let trip = viewModel.tripAlbum(withID: id) {
-                            PhotoGridView(title: "\(trip.title) · \(trip.dateRange)", photos: trip.photos, viewModel: viewModel, tripID: trip.id)
+                            if trip.photos.isEmpty {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "folder")
+                                        .font(.system(size: 32))
+                                        .foregroundStyle(.secondary)
+                                    Text("This album is empty")
+                                        .font(.headline)
+                                    Button("Browse All Photos") {
+                                        selection = .allPhotos
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 300)
+                            } else {
+                                PhotoGridView(title: "\(trip.title) · \(trip.dateRange)", photos: trip.photos, viewModel: viewModel, tripID: trip.id)
+                            }
                         } else {
                             noContentView(message: "This trip is no longer available.")
                         }
@@ -341,6 +372,33 @@ struct ContentView: View {
         case .trip(let id):
             return viewModel.tripAlbum(withID: id)?.title ?? "Trip"
         }
+    }
+
+    private var createAlbumSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("New Album")
+                .font(.title2.weight(.semibold))
+            TextField("Album name", text: $newAlbumTitle)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(createAlbum)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) {
+                    isCreatingAlbum = false
+                }
+                Button("Create", action: createAlbum)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newAlbumTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 360)
+    }
+
+    private func createAlbum() {
+        guard let album = viewModel.createAlbum(title: newAlbumTitle) else { return }
+        selection = .trip(album.id)
+        isCreatingAlbum = false
     }
 
     private func photoMonths(for directory: URL) -> [PhotoMonth] {

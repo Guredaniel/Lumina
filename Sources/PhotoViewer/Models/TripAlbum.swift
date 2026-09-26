@@ -7,6 +7,7 @@ struct TripAlbum: Identifiable, Sendable {
     let endDate: Date
     let locationName: String?
     let photos: [Photo]
+    var isManual = false
 
     var coverPhoto: Photo? { photos.first }
     var isCombined: Bool { id.hasPrefix("combined:") }
@@ -20,4 +21,10 @@ struct TripAlbum: Identifiable, Sendable {
         }
         return "\(formatter.string(from: startDate)) - \(formatter.string(from: endDate))"
     }
+}
+
+struct UserCreatedAlbum: Codable, Identifiable {
+    let id: String
+    let title: String
+    let createdDate: Date
 }
