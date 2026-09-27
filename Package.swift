@@ -24,6 +24,10 @@ let package = Package(
                 .linkedFramework("Security"),
                 .linkedLibrary("sqlite3")
             ]
+        ),
+        .testTarget(
+            name: "PhotoViewerTests",
+            dependencies: ["PhotoViewer"]
         )
     ]
 )
