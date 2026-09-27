@@ -28,3 +28,10 @@ struct UserCreatedAlbum: Codable, Identifiable {
     let title: String
     let createdDate: Date
 }
+
+struct TripPhotoRemoval: Identifiable, Sendable {
+    let id = UUID()
+    let tripID: String
+    let tripTitle: String
+    let photos: [Photo]
+}

@@ -23,6 +23,9 @@ enum AppConstants {
         static let removedTripPhotoPaths = "removedTripPhotoPaths"
         static let tripIcons = "tripIcons"
         static let userCreatedAlbums = "userCreatedAlbums"
+        static let tripStartDates = "tripStartDates"
+        static let tripEndDates = "tripEndDates"
+        static let tripLocationNames = "tripLocationNames"
     }
     
     // MARK: - Image Format Support

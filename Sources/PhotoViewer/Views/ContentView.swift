@@ -16,6 +16,10 @@ struct ContentView: View {
     @State private var selection: SidebarSelection? = .allPhotos
     @State private var tripToRename: TripAlbum?
     @State private var renameText = ""
+    @State private var tripToEdit: TripAlbum?
+    @State private var editStartDate = Date()
+    @State private var editEndDate = Date()
+    @State private var editLocationName = ""
     @State private var isCreatingAlbum = false
     @State private var newAlbumTitle = ""
 
@@ -104,6 +108,12 @@ struct ContentView: View {
                                 renameText = trip.title
                                 tripToRename = trip
                             }
+                            Button("Edit Trip Details…", systemImage: "calendar.badge.gearshape") {
+                                editStartDate = trip.startDate
+                                editEndDate = trip.endDate
+                                editLocationName = trip.locationName ?? ""
+                                tripToEdit = trip
+                            }
                             Menu("Change Icon...", systemImage: "paintpalette") {
                                 ForEach(tripIconOptions, id: \.0) { iconName, label in
                                     Button {
@@ -185,7 +195,7 @@ struct ContentView: View {
             }
             .navigationTitle("Photo Viewer")
             .toolbar {
-                ToolbarItemGroup {
+                ToolbarItem(placement: .automatic) {
                     if viewModel.isScanning {
                         if !viewModel.photoMonths.isEmpty {
                             Button(action: {}) {
@@ -254,7 +264,36 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $isCreatingAlbum) {
-            createAlbumSheet
+            createAlbumSheet(for: [])
+        }
+        .sheet(isPresented: Binding(
+            get: { viewModel.pendingAlbumPhotos != nil },
+            set: { isPresented in
+                if !isPresented { viewModel.pendingAlbumPhotos = nil }
+            }
+        )) {
+            createAlbumSheet(for: viewModel.pendingAlbumPhotos ?? [])
+        }
+        .sheet(item: $tripToEdit) { trip in
+            editTripSheet(for: trip)
+        }
+        .overlay(alignment: .bottom) {
+            if let removal = viewModel.undoableTripRemoval {
+                HStack(spacing: 14) {
+                    Text("Removed \(removal.photos.count) photo\(removal.photos.count == 1 ? "" : "s") from \(removal.tripTitle)")
+                        .lineLimit(1)
+                    Button("Undo") {
+                        viewModel.undoLastTripPhotoRemoval()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.bottom, 16)
+                .shadow(radius: 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
     }
     
@@ -268,8 +307,8 @@ struct ContentView: View {
             loadingView
         } else {
             ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    switch validatedSelection {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        switch validatedSelection {
                     case .allPhotos:
                         ForEach(viewModel.photoMonths) { month in
                             PhotoGridView(month: month, viewModel: viewModel)
@@ -346,10 +385,83 @@ struct ContentView: View {
                         } else {
                             noContentView(message: "This trip is no longer available.")
                         }
+                        }
                     }
-                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                selectionBubble
+                    .padding(20)
             }
             .navigationTitle(detailTitle)
+        }
+    }
+
+    @ViewBuilder
+    private var selectionBubble: some View {
+        if viewModel.isSelectingPhotos {
+            HStack(spacing: 12) {
+                Text("\(viewModel.selectedPhotoPaths.count) selected")
+                    .font(.callout.monospacedDigit())
+                    .fixedSize()
+                    .accessibilityLabel("\(viewModel.selectedPhotoPaths.count) photos selected")
+
+                Divider()
+                    .frame(height: 18)
+
+                Menu {
+                    ForEach(viewModel.tripAlbums) { trip in
+                        Button(trip.title) {
+                            viewModel.addPhotos(viewModel.selectedPhotos, toTripWithID: trip.id)
+                            viewModel.finishPhotoSelection()
+                        }
+                    }
+                    Divider()
+                    Button("New Trip…", systemImage: "plus") {
+                        viewModel.requestNewAlbum(with: viewModel.selectedPhotos)
+                        viewModel.finishPhotoSelection()
+                    }
+                } label: {
+                    Image(systemName: "plus.rectangle.on.rectangle")
+                }
+                .help("Add selected photos to a trip")
+                .disabled(viewModel.selectedPhotoPaths.isEmpty)
+
+                if case .trip(let tripID) = validatedSelection {
+                    Button(role: .destructive) {
+                        viewModel.removePhotos(viewModel.selectedPhotos, fromTripWithID: tripID)
+                        viewModel.finishPhotoSelection()
+                    } label: {
+                        Image(systemName: "minus.rectangle")
+                    }
+                    .help("Remove selected photos from this trip")
+                    .accessibilityLabel("Remove selected photos from this trip")
+                    .disabled(viewModel.selectedPhotoPaths.isEmpty)
+                }
+
+                Button(role: .cancel) {
+                    viewModel.finishPhotoSelection()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .help("Cancel photo selection")
+                .accessibilityLabel("Cancel photo selection")
+                .keyboardShortcut(.cancelAction)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .glassEffect(.regular, in: Capsule())
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if !viewModel.allPhotosFlat.isEmpty {
+            Button("Select Photos", systemImage: "checkmark.circle") {
+                viewModel.beginPhotoSelection()
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .glassEffect(.regular, in: Capsule())
+            .help("Select photos across the library")
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
     
@@ -374,19 +486,23 @@ struct ContentView: View {
         }
     }
 
-    private var createAlbumSheet: some View {
+    private func createAlbumSheet(for photos: [Photo]) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("New Album")
                 .font(.title2.weight(.semibold))
+            if !photos.isEmpty {
+                Text("\(photos.count) photo\(photos.count == 1 ? "" : "s") will be added")
+                    .foregroundStyle(.secondary)
+            }
             TextField("Album name", text: $newAlbumTitle)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit(createAlbum)
+                .onSubmit { createAlbum(with: photos) }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) {
                     isCreatingAlbum = false
                 }
-                Button("Create", action: createAlbum)
+                Button("Create") { createAlbum(with: photos) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(newAlbumTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -395,10 +511,47 @@ struct ContentView: View {
         .frame(width: 360)
     }
 
-    private func createAlbum() {
-        guard let album = viewModel.createAlbum(title: newAlbumTitle) else { return }
+    private func editTripSheet(for trip: TripAlbum) -> some View {
+        NavigationStack {
+            Form {
+                Section("Trip dates") {
+                    DatePicker("Starts", selection: $editStartDate, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("Ends", selection: $editEndDate, in: editStartDate..., displayedComponents: [.date, .hourAndMinute])
+                }
+
+                Section("Location") {
+                    TextField("Location label", text: $editLocationName)
+                    Text("This label is shown beneath the album name.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Edit Trip Details")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        tripToEdit = nil
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        viewModel.updateTripDetails(withID: trip.id, startDate: editStartDate, endDate: editEndDate, locationName: editLocationName)
+                        tripToEdit = nil
+                    }
+                    .disabled(editEndDate < editStartDate)
+                }
+            }
+            .frame(minWidth: 420, minHeight: 280)
+        }
+    }
+
+    private func createAlbum(with photos: [Photo]) {
+        guard let album = viewModel.createAlbum(title: newAlbumTitle, photos: photos) else { return }
         selection = .trip(album.id)
         isCreatingAlbum = false
+        viewModel.pendingAlbumPhotos = nil
+        newAlbumTitle = ""
     }
 
     private func photoMonths(for directory: URL) -> [PhotoMonth] {

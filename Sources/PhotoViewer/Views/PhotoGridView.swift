@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct PhotoGridView: View {
     let title: String
@@ -34,34 +35,61 @@ struct PhotoGridView: View {
             Text(title)
                 .font(.title2)
                 .fontWeight(.semibold)
-                .padding(.horizontal, AppConstants.GridDisplay.gridPadding)
-                .padding(.top, AppConstants.GridDisplay.gridPadding)
+            .padding(.horizontal, AppConstants.GridDisplay.gridPadding)
+            .padding(.top, AppConstants.GridDisplay.gridPadding)
             
             LazyVGrid(columns: columns, spacing: AppConstants.GridDisplay.gridSpacing) {
                 ForEach(photos, id: \.url) { photo in
-                    PhotoThumbnailView(photo: photo, viewModel: viewModel, tripID: tripID)
+                    PhotoThumbnailView(
+                        photo: photo,
+                        viewModel: viewModel,
+                        tripID: tripID,
+                        isSelectionMode: viewModel.isSelectingPhotos,
+                        isSelected: viewModel.selectedPhotoPaths.contains(photo.url.path),
+                        onEnterSelection: { viewModel.beginPhotoSelection() },
+                        onToggleSelection: { extendSelection in
+                            viewModel.togglePhotoSelection(photo, extendSelection: extendSelection)
+                        }
+                    )
                 }
             }
             .padding(.horizontal, AppConstants.GridDisplay.gridPadding)
             .padding(.bottom, AppConstants.GridDisplay.gridPadding)
         }
     }
+
 }
 
 struct PhotoThumbnailView: View {
     let photo: Photo
     @ObservedObject var viewModel: PhotoViewModel
     let tripID: String?
+    let isSelectionMode: Bool
+    let isSelected: Bool
+    let onEnterSelection: () -> Void
+    let onToggleSelection: (Bool) -> Void
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var thumbnail: NSImage?
     @State private var isHovered = false
     @State private var loadError: Bool = false
     @State private var loadingTask: Task<Void, Never>?
     
-    init(photo: Photo, viewModel: PhotoViewModel, tripID: String? = nil) {
+    init(
+        photo: Photo,
+        viewModel: PhotoViewModel,
+        tripID: String? = nil,
+        isSelectionMode: Bool = false,
+        isSelected: Bool = false,
+        onEnterSelection: @escaping () -> Void = {},
+        onToggleSelection: @escaping (Bool) -> Void = { _ in }
+    ) {
         self.photo = photo
         self.viewModel = viewModel
         self.tripID = tripID
+        self.isSelectionMode = isSelectionMode
+        self.isSelected = isSelected
+        self.onEnterSelection = onEnterSelection
+        self.onToggleSelection = onToggleSelection
         
         // Synchronous cache check: If the image is already cached, 
         // show it IMMEDIATELY to prevent the loading flicker.
@@ -117,6 +145,15 @@ struct PhotoThumbnailView: View {
                             .padding(6)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     }
+
+                            if isSelectionMode {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.title2)
+                                .foregroundStyle(isSelected ? Color.accentColor : .white)
+                                .background(Circle().fill(.black.opacity(0.45)))
+                                .padding(8)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            }
                 }
             }
             .aspectRatio(1, contentMode: .fit)
@@ -132,7 +169,14 @@ struct PhotoThumbnailView: View {
                 isHovered = hovering
             }
             .onTapGesture {
-                viewModel.selectedPhoto = photo
+                if isSelectionMode {
+                    onToggleSelection(NSEvent.modifierFlags.contains(.shift))
+                } else if NSEvent.modifierFlags.contains(.shift) {
+                    onEnterSelection()
+                    onToggleSelection(false)
+                } else {
+                    viewModel.selectedPhoto = photo
+                }
             }
             .onAppear {
                 if thumbnail == nil {
@@ -177,6 +221,10 @@ struct PhotoThumbnailView: View {
                         Button(trip.title) {
                             viewModel.addPhoto(photo, toTripWithID: trip.id)
                         }
+                    }
+                    Divider()
+                    Button("New Trip…", systemImage: "plus") {
+                        viewModel.requestNewAlbum(with: [photo])
                     }
                 }
 
