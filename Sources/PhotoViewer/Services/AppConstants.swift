@@ -26,6 +26,7 @@ enum AppConstants {
         static let tripStartDates = "tripStartDates"
         static let tripEndDates = "tripEndDates"
         static let tripLocationNames = "tripLocationNames"
+        static let lockedTripSnapshots = "lockedTripSnapshots"
     }
     
     // MARK: - Image Format Support

@@ -40,6 +40,7 @@ class PhotoViewModel: ObservableObject {
     private var tripStartDates: [String: Date]
     private var tripEndDates: [String: Date]
     private var tripLocationNames: [String: String]
+    private var lockedTripSnapshots: [String: LockedTripSnapshot]
     private var tripRefreshGeneration = 0
     private var selectionAnchorPath: String?
 
@@ -65,6 +66,12 @@ class PhotoViewModel: ObservableObject {
         tripStartDates = Self.loadDateMap(forKey: AppConstants.UserDefaultsKeys.tripStartDates)
         tripEndDates = Self.loadDateMap(forKey: AppConstants.UserDefaultsKeys.tripEndDates)
         tripLocationNames = UserDefaults.standard.dictionary(forKey: AppConstants.UserDefaultsKeys.tripLocationNames) as? [String: String] ?? [:]
+        if let data = UserDefaults.standard.data(forKey: AppConstants.UserDefaultsKeys.lockedTripSnapshots),
+           let snapshots = try? JSONDecoder().decode([LockedTripSnapshot].self, from: data) {
+            lockedTripSnapshots = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+        } else {
+            lockedTripSnapshots = [:]
+        }
         
         // Load persisted state
         directoryManager.loadDirectories()
@@ -201,7 +208,14 @@ class PhotoViewModel: ObservableObject {
             maximumTimeGapHours: max(1, settings.tripMaximumTimeGap)
         )
 
-        let albums = settings.automaticTripDetection ? detector.detectTrips(in: photos) : []
+        let lockedPhotoPaths = Set(lockedTripSnapshots.values.flatMap { snapshot in
+            snapshot.photoPaths + Array(addedTripPhotoPaths[snapshot.id, default: []])
+        })
+        let albums = settings.automaticTripDetection
+            ? detector.detectTrips(in: photos).filter { album in
+                lockedTripSnapshots[album.id] == nil && Set(album.photos.map(\.url.path)).isDisjoint(with: lockedPhotoPaths)
+            }
+            : []
         updateTripAlbumState(albums, allPhotos: photos)
 
         guard settings.automaticTripDetection else { return }
@@ -234,6 +248,29 @@ class PhotoViewModel: ObservableObject {
 
     func iconName(for trip: TripAlbum) -> String {
         tripIcons[trip.id] ?? (trip.isManual ? "folder.fill" : (trip.isCombined ? "rectangle.stack.fill" : "airplane"))
+    }
+
+    func isTripLocked(_ id: String) -> Bool {
+        lockedTripSnapshots[id] != nil
+    }
+
+    func setTripLocked(_ id: String, isLocked: Bool) {
+        guard let album = tripAlbums.first(where: { $0.id == id }) else { return }
+        if isLocked {
+            lockedTripSnapshots[id] = LockedTripSnapshot(
+                id: album.id,
+                title: album.title,
+                startDate: album.startDate,
+                endDate: album.endDate,
+                locationName: album.locationName,
+                photoPaths: album.photos.map(\.url.path),
+                isManual: album.isManual
+            )
+        } else {
+            lockedTripSnapshots.removeValue(forKey: id)
+        }
+        persistLockedTripSnapshots()
+        refreshTripAlbums()
     }
 
     @discardableResult
@@ -445,12 +482,34 @@ class PhotoViewModel: ObservableObject {
             )
             return applyTripDetails(to: applyMembershipOverrides(to: album, allPhotos: allPhotos))
         }
-        let availableAlbums = detectedAlbums + manualAlbums
+        let lockedAlbums = lockedTripSnapshots.values.compactMap { snapshot -> TripAlbum? in
+            guard includeHidden || !hiddenTripIDs.contains(snapshot.id) else { return nil }
+            let photosByPath = Dictionary(uniqueKeysWithValues: allPhotos.map { ($0.url.path, $0) })
+            let photos = snapshot.photoPaths.compactMap { photosByPath[$0] }
+            let lockedAlbum = TripAlbum(
+                id: snapshot.id,
+                title: snapshot.title,
+                startDate: snapshot.startDate,
+                endDate: snapshot.endDate,
+                locationName: snapshot.locationName,
+                photos: photos,
+                isManual: snapshot.isManual
+            )
+            return applyTripDetails(to: renamedAlbum(applyMembershipOverrides(to: lockedAlbum, allPhotos: allPhotos)))
+        }
+        let availableAlbums = detectedAlbums + manualAlbums.filter { album in
+            lockedTripSnapshots[album.id] == nil
+        } + lockedAlbums
         let albumsByID = Dictionary(uniqueKeysWithValues: availableAlbums.map { ($0.id, $0) })
         var consumedIDs = Set<String>()
         var combinedAlbums: [TripAlbum] = []
 
         for group in combinedTripGroups {
+            let groupID = combinedTripID(for: group)
+            if lockedTripSnapshots[groupID] != nil {
+                consumedIDs.formUnion(group)
+                continue
+            }
             let members = group.compactMap { albumsByID[$0] }
             guard members.count >= 2 else { continue }
 
@@ -477,6 +536,12 @@ class PhotoViewModel: ObservableObject {
     private func persistUserCreatedAlbums() {
         guard let data = try? JSONEncoder().encode(userCreatedAlbums) else { return }
         UserDefaults.standard.set(data, forKey: AppConstants.UserDefaultsKeys.userCreatedAlbums)
+    }
+
+    private func persistLockedTripSnapshots() {
+        let snapshots = lockedTripSnapshots.values.sorted { $0.id < $1.id }
+        guard let data = try? JSONEncoder().encode(snapshots) else { return }
+        UserDefaults.standard.set(data, forKey: AppConstants.UserDefaultsKeys.lockedTripSnapshots)
     }
 
     private func renamedAlbum(_ album: TripAlbum) -> TripAlbum {

@@ -29,6 +29,16 @@ struct UserCreatedAlbum: Codable, Identifiable {
     let createdDate: Date
 }
 
+struct LockedTripSnapshot: Codable, Identifiable {
+    let id: String
+    let title: String
+    let startDate: Date
+    let endDate: Date
+    let locationName: String?
+    let photoPaths: [String]
+    let isManual: Bool
+}
+
 struct TripPhotoRemoval: Identifiable, Sendable {
     let id = UUID()
     let tripID: String

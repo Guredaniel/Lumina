@@ -101,6 +101,15 @@ struct ContentView: View {
                         } icon: {
                             Image(systemName: viewModel.iconName(for: trip))
                                 .foregroundStyle(.secondary)
+                                .overlay(alignment: .bottomTrailing) {
+                                    if viewModel.isTripLocked(trip.id) {
+                                        Image(systemName: "lock.fill")
+                                            .font(.system(size: 8, weight: .bold))
+                                            .padding(2)
+                                            .background(.background, in: Circle())
+                                            .offset(x: 4, y: 3)
+                                    }
+                                }
                         }
                         .tag(SidebarSelection.trip(trip.id))
                         .contextMenu {
@@ -113,6 +122,14 @@ struct ContentView: View {
                                 editEndDate = trip.endDate
                                 editLocationName = trip.locationName ?? ""
                                 tripToEdit = trip
+                            }
+                            Button(
+                                viewModel.isTripLocked(trip.id)
+                                    ? (trip.isManual ? "Unlock Album" : "Unlock Trip")
+                                    : (trip.isManual ? "Lock Album" : "Lock Trip"),
+                                systemImage: viewModel.isTripLocked(trip.id) ? "lock.open" : "lock"
+                            ) {
+                                viewModel.setTripLocked(trip.id, isLocked: !viewModel.isTripLocked(trip.id))
                             }
                             Menu("Change Icon...", systemImage: "paintpalette") {
                                 ForEach(tripIconOptions, id: \.0) { iconName, label in
