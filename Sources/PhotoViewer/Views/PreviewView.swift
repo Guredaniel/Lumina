@@ -607,11 +607,14 @@ struct PreviewView: View {
             // Metadata section
             if showMetadata {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Image Details").font(.headline)
+                        Text("Media Details").font(.headline)
                     Divider()
                     Group {
                         let meta = extractedMetadata.isEmpty ? currentPhoto.exifMetadata : extractedMetadata
-                        metadataRow(label: "Date:", value: meta["dateTime"] as? String)
+                            metadataRow(label: "Name:", value: currentPhoto.filename)
+                            metadataRow(label: "Type:", value: currentPhoto.isVideo ? "Video" : "Photo")
+                            metadataRow(label: "Date:", value: meta["dateTime"] as? String ?? Self.detailsDateFormatter.string(from: currentPhoto.date))
+                            metadataRow(label: "File Size:", value: fileSizeDescription)
                         metadataRow(label: "Camera:", value: meta["cameraMake"] as? String)
                         if let w = meta["width"], let h = meta["height"] {
                             metadataRow(label: "Dimensions:", value: "\(w) \u{00D7} \(h)")
@@ -695,6 +698,19 @@ struct PreviewView: View {
             }
         }
     }
+
+    private var fileSizeDescription: String? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: currentPhoto.url.path),
+              let fileSize = attributes[.size] as? NSNumber else { return nil }
+        return ByteCountFormatter.string(fromByteCount: fileSize.int64Value, countStyle: .file)
+    }
+
+    private static let detailsDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
     
     /// Reverse-geocodes GPS coordinates from the current photo's metadata using CLGeocoder.
     private func geocodeIfNeeded() {
