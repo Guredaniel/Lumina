@@ -410,6 +410,11 @@ class PhotoViewModel: ObservableObject {
         refreshTripAlbums()
     }
 
+    func dismissTripPhotoRemoval(withID id: UUID) {
+        guard undoableTripRemoval?.id == id else { return }
+        undoableTripRemoval = nil
+    }
+
     func updateTripDetails(withID id: String, startDate: Date, endDate: Date, locationName: String) {
         guard tripAlbums.contains(where: { $0.id == id }), startDate <= endDate else { return }
         tripStartDates[id] = startDate

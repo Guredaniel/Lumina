@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 enum SidebarSelection: Hashable {
     case allPhotos
@@ -303,6 +304,14 @@ struct ContentView: View {
                         viewModel.undoLastTripPhotoRemoval()
                     }
                     .buttonStyle(.borderedProminent)
+                    Button {
+                        viewModel.dismissTripPhotoRemoval(withID: removal.id)
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss")
+                    .accessibilityLabel("Dismiss undo message")
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -310,6 +319,14 @@ struct ContentView: View {
                 .padding(.bottom, 16)
                 .shadow(radius: 8)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
+                .task(id: removal.id) {
+                    do {
+                        try await Task.sleep(nanoseconds: 5_000_000_000)
+                    } catch {
+                        return
+                    }
+                    viewModel.dismissTripPhotoRemoval(withID: removal.id)
+                }
             }
         }
     }
@@ -410,7 +427,15 @@ struct ContentView: View {
                     .padding(20)
             }
             .navigationTitle(detailTitle)
+            .navigationSubtitle(detailSubtitle)
         }
+    }
+
+    private var detailSubtitle: Text {
+        guard case .trip(let id) = validatedSelection,
+              let locationName = viewModel.tripAlbum(withID: id)?.locationName,
+              !locationName.isEmpty else { return Text("") }
+        return Text(locationName)
     }
 
     @ViewBuilder
@@ -424,6 +449,16 @@ struct ContentView: View {
 
                 Divider()
                     .frame(height: 18)
+
+                Button {
+                    copySelectedPhotos()
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .help("Copy selected photos and videos")
+                .accessibilityLabel("Copy selected photos and videos")
+                .keyboardShortcut("c", modifiers: .command)
+                .disabled(viewModel.selectedPhotos.isEmpty)
 
                 Menu {
                     ForEach(viewModel.tripAlbums) { trip in
@@ -480,6 +515,14 @@ struct ContentView: View {
             .help("Select photos across the library")
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+    }
+
+    private func copySelectedPhotos() {
+        let fileURLs = viewModel.selectedPhotos.map { $0.url as NSURL }
+        guard !fileURLs.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects(fileURLs)
     }
     
     private var detailTitle: String {
