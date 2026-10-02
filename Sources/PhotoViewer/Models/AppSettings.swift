@@ -82,7 +82,7 @@ class AppSettings: ObservableObject {
         // Default live photo playback to play once for a less intrusive UX
         self.livePhotoPlaybackMode = defaults.string(forKey: AppConstants.UserDefaultsKeys.livePhotoPlaybackMode) ?? "once"
         self.automaticTripDetection = defaults.object(forKey: AppConstants.UserDefaultsKeys.automaticTripDetection) as? Bool ?? true
-        self.tripMinimumPhotos = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripMinimumPhotos) as? Int ?? 5
+        self.tripMinimumPhotos = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripMinimumPhotos) as? Int ?? 10
         self.tripLocationRadius = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripLocationRadius) as? Double ?? 75
         self.tripMaximumTimeGap = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripMaximumTimeGap) as? Double ?? 36
     }
