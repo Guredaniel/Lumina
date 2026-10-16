@@ -88,15 +88,6 @@ PhotoViewer/
 - Recursive search can be slow on very large directory trees (100k+ files)
 - Some rare image formats may fall back to NSImage thumbnail generation
 
-## Future Enhancements
-
-- Add search/filter by date range
-- Implement slideshow mode
-- Add image editing capabilities (rotate, crop)
-- Support for video thumbnails
-- Batch operations (move, delete, export)
-- Customizable sorting and grouping options
-
 ## Troubleshooting
 
 ### "Permission Denied" Error
