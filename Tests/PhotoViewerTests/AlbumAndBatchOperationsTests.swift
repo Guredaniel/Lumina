@@ -97,4 +97,37 @@ final class AlbumAndBatchOperationsTests: XCTestCase {
         XCTAssertEqual(viewModel.photoMonths.first?.photos.first?.url, file2)
         XCTAssertFalse(viewModel.selectedPhotoPaths.contains(file1.path))
     }
+
+    func testEnableReverseGeocodingDefaultsToTrue() {
+        let settings = AppSettings.shared
+        // Reset first so we start from a known state
+        settings.resetToDefaults()
+        XCTAssertTrue(settings.enableReverseGeocoding, "enableReverseGeocoding should default to true")
+
+        // Toggle off
+        settings.enableReverseGeocoding = false
+        XCTAssertFalse(settings.enableReverseGeocoding)
+
+        // resetToDefaults restores to true
+        settings.resetToDefaults()
+        XCTAssertTrue(settings.enableReverseGeocoding)
+    }
+
+    func testTripDetectionServiceSkipsGeocodingWhenDisabled() async {
+        // A coordinate that is almost certainly NOT in the local SQLite cache
+        let service = TripDetectionService(
+            minimumPhotos: 2,
+            locationRadiusKilometers: 100,
+            maximumTimeGapHours: 36,
+            enableReverseGeocoding: false
+        )
+        let date = Date()
+        let photos = [
+            Photo(url: URL(fileURLWithPath: "/tmp/geo-test-1.jpg"), date: date, exifMetadata: [:], latitude: 37.3318, longitude: -122.0312),
+            Photo(url: URL(fileURLWithPath: "/tmp/geo-test-2.jpg"), date: date.addingTimeInterval(60), exifMetadata: [:], latitude: 37.3319, longitude: -122.0313)
+        ]
+        // SQLite cache is empty for these random coordinates; geocoding is disabled → must return nil without network
+        let name = await service.locationName(for: photos)
+        XCTAssertNil(name, "locationName should return nil when reverse geocoding is disabled and coordinates are uncached")
+    }
 }

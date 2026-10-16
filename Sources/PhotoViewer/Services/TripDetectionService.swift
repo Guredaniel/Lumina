@@ -5,6 +5,14 @@ struct TripDetectionService: Sendable {
     let minimumPhotos: Int
     let locationRadiusKilometers: Double
     let maximumTimeGapHours: Double
+    let enableReverseGeocoding: Bool
+
+    init(minimumPhotos: Int, locationRadiusKilometers: Double, maximumTimeGapHours: Double, enableReverseGeocoding: Bool = true) {
+        self.minimumPhotos = minimumPhotos
+        self.locationRadiusKilometers = locationRadiusKilometers
+        self.maximumTimeGapHours = maximumTimeGapHours
+        self.enableReverseGeocoding = enableReverseGeocoding
+    }
 
     func detectTrips(in photos: [Photo]) -> [TripAlbum] {
         let locatedPhotos = photos.compactMap { photo -> (Photo, CLLocation)? in
@@ -58,6 +66,8 @@ struct TripDetectionService: Sendable {
         if let cachedName = SQLiteDatabase.shared.cachedLocationName(latitude: center.coordinate.latitude, longitude: center.coordinate.longitude) {
             return cachedName
         }
+
+        guard enableReverseGeocoding else { return nil }
 
         guard let placeName = await reverseGeocode(center) else { return nil }
         SQLiteDatabase.shared.cacheLocationName(placeName, latitude: center.coordinate.latitude, longitude: center.coordinate.longitude)

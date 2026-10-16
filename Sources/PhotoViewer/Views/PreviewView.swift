@@ -721,7 +721,16 @@ struct PreviewView: View {
               let lonStr = meta["gpsLongitude"],
               let lat = Double(latStr),
               let lon = Double(lonStr) else { return }
-        
+
+        // Check the local cache first — no network needed
+        if let cached = SQLiteDatabase.shared.cachedLocationName(latitude: lat, longitude: lon) {
+            geoPlaceName = cached
+            return
+        }
+
+        // Respect the user's privacy preference
+        guard appSettings.enableReverseGeocoding else { return }
+
         isGeocoding = true
         let location = CLLocation(latitude: lat, longitude: lon)
         CLGeocoder().reverseGeocodeLocation(location) { placemarks, _ in
@@ -732,7 +741,11 @@ struct PreviewView: View {
                     if let locality = pm.locality { parts.append(locality) }
                     if let adminArea = pm.administrativeArea { parts.append(adminArea) }
                     if let country = pm.country { parts.append(country) }
-                    geoPlaceName = parts.isEmpty ? nil : parts.joined(separator: ", ")
+                    let resolved = parts.isEmpty ? nil : parts.joined(separator: ", ")
+                    geoPlaceName = resolved
+                    if let name = resolved {
+                        SQLiteDatabase.shared.cacheLocationName(name, latitude: lat, longitude: lon)
+                    }
                 }
             }
         }

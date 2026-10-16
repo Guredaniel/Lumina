@@ -177,6 +177,13 @@ final class SQLiteDatabase: @unchecked Sendable {
         }
     }
 
+    func clearLocationCache() {
+        queue.sync {
+            guard let db = self.db else { return }
+            sqlite3_exec(db, "DELETE FROM location_cache;", nil, nil, nil)
+        }
+    }
+
     private static func locationCacheKey(latitude: Double, longitude: Double) -> String {
         let roundedLatitude = Int((latitude * 10_000).rounded())
         let roundedLongitude = Int((longitude * 10_000).rounded())

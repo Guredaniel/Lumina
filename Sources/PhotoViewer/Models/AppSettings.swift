@@ -56,6 +56,13 @@ class AppSettings: ObservableObject {
             UserDefaults.standard.set(tripMaximumTimeGap, forKey: AppConstants.UserDefaultsKeys.tripMaximumTimeGap)
         }
     }
+
+    // MARK: - Privacy & Location Settings
+    @Published var enableReverseGeocoding: Bool {
+        didSet {
+            UserDefaults.standard.set(enableReverseGeocoding, forKey: AppConstants.UserDefaultsKeys.enableReverseGeocoding)
+        }
+    }
     
     // MARK: - Thumbnail Settings
     var thumbnailSize: CGSize {
@@ -85,6 +92,7 @@ class AppSettings: ObservableObject {
         self.tripMinimumPhotos = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripMinimumPhotos) as? Int ?? 10
         self.tripLocationRadius = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripLocationRadius) as? Double ?? 75
         self.tripMaximumTimeGap = defaults.object(forKey: AppConstants.UserDefaultsKeys.tripMaximumTimeGap) as? Double ?? 36
+        self.enableReverseGeocoding = defaults.object(forKey: AppConstants.UserDefaultsKeys.enableReverseGeocoding) as? Bool ?? true
     }
     
     // MARK: - Reset to Defaults
@@ -97,5 +105,6 @@ class AppSettings: ObservableObject {
         tripMinimumPhotos = 10
         tripLocationRadius = 75
         tripMaximumTimeGap = 36
+        enableReverseGeocoding = true
     }
 }

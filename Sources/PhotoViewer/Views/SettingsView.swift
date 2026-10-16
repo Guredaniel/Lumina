@@ -1,50 +1,68 @@
 import SwiftUI
 
+// MARK: - Settings Tab Enum
+
+private enum SettingsTab: String, CaseIterable {
+    case general     = "general"
+    case trips       = "trips"
+    case directories = "directories"
+    case storage     = "storage"
+    case privacy     = "privacy"
+}
+
+// MARK: - Root View
+
 struct SettingsView: View {
     @ObservedObject var viewModel: PhotoViewModel
     @ObservedObject private var appSettings = AppSettings.shared
+
+    @SceneStorage("selectedSettingsTab") private var selectedTab: String = SettingsTab.general.rawValue
+
+    // Dialog state
     @State private var showingRestoreTrips = false
     @State private var selectedHiddenTripIDs: Set<String> = []
     @State private var cacheSizeBytes: Int64 = 0
     @State private var showingClearCacheAlert = false
     @State private var showingResetDefaultsAlert = false
+    @State private var showingClearLocationCacheAlert = false
 
     var body: some View {
-        TabView {
-            generalSettings
-                .tabItem {
-                    Label("General", systemImage: "gearshape")
+        TabView(selection: $selectedTab) {
+            Tab("General", systemImage: "gearshape", value: SettingsTab.general.rawValue) {
+                generalSettings
+            }
+
+            Tab("Trips", systemImage: "airplane", value: SettingsTab.trips.rawValue) {
+                tripSettings
+            }
+
+            Tab("Directories", systemImage: "folder", value: SettingsTab.directories.rawValue) {
+                directorySettings
+            }
+
+            TabSection("System") {
+                Tab("Storage", systemImage: "internaldrive", value: SettingsTab.storage.rawValue) {
+                    storageSettings
                 }
-            tripSettings
-                .tabItem {
-                    Label("Trips", systemImage: "airplane")
+
+                Tab("Privacy", systemImage: "hand.raised", value: SettingsTab.privacy.rawValue) {
+                    privacySettings
                 }
-            directorySettings
-                .tabItem {
-                    Label("Directories", systemImage: "folder")
-                }
-            storageSettings
-                .tabItem {
-                    Label("Storage", systemImage: "internaldrive")
-                }
+            }
         }
-        .frame(minWidth: 560, minHeight: 460)
+        .tabViewStyle(.sidebarAdaptable)
+        .frame(minWidth: 620, minHeight: 460)
         .sheet(isPresented: $showingRestoreTrips) {
             restoreTripsSheet
         }
-        .onChange(of: appSettings.automaticTripDetection) { _ in
-            viewModel.refreshTripAlbums()
-        }
-        .onChange(of: appSettings.tripMinimumPhotos) { _ in
-            viewModel.refreshTripAlbums()
-        }
-        .onChange(of: appSettings.tripLocationRadius) { _ in
-            viewModel.refreshTripAlbums()
-        }
-        .onChange(of: appSettings.tripMaximumTimeGap) { _ in
-            viewModel.refreshTripAlbums()
-        }
+        .onChange(of: appSettings.automaticTripDetection) { _ in viewModel.refreshTripAlbums() }
+        .onChange(of: appSettings.tripMinimumPhotos)      { _ in viewModel.refreshTripAlbums() }
+        .onChange(of: appSettings.tripLocationRadius)     { _ in viewModel.refreshTripAlbums() }
+        .onChange(of: appSettings.tripMaximumTimeGap)     { _ in viewModel.refreshTripAlbums() }
+        .onChange(of: appSettings.enableReverseGeocoding) { _ in viewModel.refreshTripAlbums() }
     }
+
+    // MARK: - General
 
     private var generalSettings: some View {
         Form {
@@ -70,9 +88,10 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .navigationTitle("General")
     }
+
+    // MARK: - Trips
 
     private var tripSettings: some View {
         Form {
@@ -123,54 +142,10 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .navigationTitle("Trips")
     }
 
-    private var restoreTripsSheet: some View {
-        NavigationStack {
-            List(viewModel.hiddenTripAlbums) { trip in
-                Toggle(isOn: selectionBinding(for: trip.id)) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(trip.title)
-                        Text(trip.dateRange)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .toggleStyle(.checkbox)
-            }
-            .navigationTitle("Restore Hidden Trips")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        showingRestoreTrips = false
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Restore Selected") {
-                        viewModel.restoreHiddenTrips(withIDs: selectedHiddenTripIDs)
-                        showingRestoreTrips = false
-                    }
-                    .disabled(selectedHiddenTripIDs.isEmpty)
-                }
-            }
-            .frame(minWidth: 420, minHeight: 320)
-        }
-    }
-
-    private func selectionBinding(for id: String) -> Binding<Bool> {
-        Binding(
-            get: { selectedHiddenTripIDs.contains(id) },
-            set: { isSelected in
-                if isSelected {
-                    selectedHiddenTripIDs.insert(id)
-                } else {
-                    selectedHiddenTripIDs.remove(id)
-                }
-            }
-        )
-    }
+    // MARK: - Directories
 
     private var directorySettings: some View {
         VStack(spacing: 0) {
@@ -229,7 +204,10 @@ struct SettingsView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
         }
+        .navigationTitle("Directories")
     }
+
+    // MARK: - Storage
 
     private var storageSettings: some View {
         Form {
@@ -259,10 +237,9 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .navigationTitle("Storage")
         .onAppear {
-            refreshCacheSize()
+            cacheSizeBytes = ThumbnailCacheManager.shared.diskCacheSize()
         }
         .confirmationDialog(
             "Clear Thumbnail Cache?",
@@ -271,7 +248,7 @@ struct SettingsView: View {
         ) {
             Button("Clear Cache", role: .destructive) {
                 ThumbnailCacheManager.shared.clear()
-                refreshCacheSize()
+                cacheSizeBytes = ThumbnailCacheManager.shared.diskCacheSize()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -292,7 +269,85 @@ struct SettingsView: View {
         }
     }
 
-    private func refreshCacheSize() {
-        cacheSizeBytes = ThumbnailCacheManager.shared.diskCacheSize()
+    // MARK: - Privacy
+
+    private var privacySettings: some View {
+        Form {
+            Section {
+                Toggle("Enable location lookup for photos", isOn: $appSettings.enableReverseGeocoding)
+                Text("When enabled, the app contacts Apple\u{2019}s servers to convert GPS coordinates in your photos to place names. Disable this to prevent any network requests for location data. Previously resolved names remain visible from the local cache.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Reverse Geocoding")
+            }
+
+            Section("Location Cache") {
+                Button("Clear Cached Location Names\u{2026}") {
+                    showingClearLocationCacheAlert = true
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Privacy")
+        .confirmationDialog(
+            "Clear Location Cache?",
+            isPresented: $showingClearLocationCacheAlert,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Location Cache", role: .destructive) {
+                SQLiteDatabase.shared.clearLocationCache()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All locally cached place names will be removed. They will be re-fetched from Apple\u{2019}s servers the next time a geotagged photo is viewed, if location lookup is enabled.")
+        }
+    }
+
+    // MARK: - Restore Trips Sheet
+
+    private var restoreTripsSheet: some View {
+        NavigationStack {
+            List(viewModel.hiddenTripAlbums) { trip in
+                Toggle(isOn: selectionBinding(for: trip.id)) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(trip.title)
+                        Text(trip.dateRange)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+            }
+            .navigationTitle("Restore Hidden Trips")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showingRestoreTrips = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Restore Selected") {
+                        viewModel.restoreHiddenTrips(withIDs: selectedHiddenTripIDs)
+                        showingRestoreTrips = false
+                    }
+                    .disabled(selectedHiddenTripIDs.isEmpty)
+                }
+            }
+            .frame(minWidth: 420, minHeight: 320)
+        }
+    }
+
+    private func selectionBinding(for id: String) -> Binding<Bool> {
+        Binding(
+            get: { selectedHiddenTripIDs.contains(id) },
+            set: { isSelected in
+                if isSelected {
+                    selectedHiddenTripIDs.insert(id)
+                } else {
+                    selectedHiddenTripIDs.remove(id)
+                }
+            }
+        )
     }
 }

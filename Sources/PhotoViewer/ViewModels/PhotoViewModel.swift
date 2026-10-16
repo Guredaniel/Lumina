@@ -223,7 +223,8 @@ class PhotoViewModel: ObservableObject {
         let detector = TripDetectionService(
             minimumPhotos: max(2, settings.tripMinimumPhotos),
             locationRadiusKilometers: max(1, settings.tripLocationRadius),
-            maximumTimeGapHours: max(1, settings.tripMaximumTimeGap)
+            maximumTimeGapHours: max(1, settings.tripMaximumTimeGap),
+            enableReverseGeocoding: settings.enableReverseGeocoding
         )
 
         let lockedPhotoPaths = Set(lockedTripSnapshots.values.flatMap { snapshot in

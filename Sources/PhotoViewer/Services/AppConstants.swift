@@ -27,6 +27,7 @@ enum AppConstants {
         static let tripEndDates = "tripEndDates"
         static let tripLocationNames = "tripLocationNames"
         static let lockedTripSnapshots = "lockedTripSnapshots"
+        static let enableReverseGeocoding = "enableReverseGeocoding"
     }
     
     // MARK: - Image Format Support
