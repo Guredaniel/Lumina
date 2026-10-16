@@ -23,6 +23,8 @@ struct ContentView: View {
     @State private var editLocationName = ""
     @State private var isCreatingAlbum = false
     @State private var newAlbumTitle = ""
+    @State private var albumToDelete: TripAlbum?
+    @State private var showingBatchDeleteConfirmation = false
 
     private let tripIconOptions = [
         ("airplane", "Airplane"),
@@ -68,219 +70,17 @@ struct ContentView: View {
     
     var body: some View {
         NavigationSplitView {
-            List(selection: $selection) {
-                Section {
-                    Label("All Photos", systemImage: "photo.on.rectangle")
-                        .tag(SidebarSelection.allPhotos)
-                    
-                    Label("Favorites", systemImage: "heart.fill")
-                        .tag(SidebarSelection.favorites)
-                        .foregroundColor(selection == .favorites ? .white : .brown)
-                }
-                
-                if !viewModel.selectedDirectories.isEmpty {
-                    Section(header: Text("Sources")) {
-                        Label("All Sources", systemImage: "tray.full")
-                            .tag(SidebarSelection.allPhotos)
-                        ForEach(viewModel.selectedDirectories, id: \.self) { directory in
-                            Label(directory.lastPathComponent, systemImage: "folder")
-                                .tag(SidebarSelection.source(directory))
-                        }
-                    }
-                }
-
-                Section {
-                    ForEach(viewModel.tripAlbums) { trip in
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(trip.title)
-                                Text(trip.photos.isEmpty ? "Empty album" : trip.dateRange)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        } icon: {
-                            Image(systemName: viewModel.iconName(for: trip))
-                                .foregroundStyle(.secondary)
-                                .overlay(alignment: .bottomTrailing) {
-                                    if viewModel.isTripLocked(trip.id) {
-                                        Image(systemName: "lock.fill")
-                                            .font(.system(size: 8, weight: .bold))
-                                            .padding(2)
-                                            .background(.background, in: Circle())
-                                            .offset(x: 4, y: 3)
-                                    }
-                                }
-                        }
-                        .tag(SidebarSelection.trip(trip.id))
-                        .contextMenu {
-                            Button("Rename Trip", systemImage: "pencil") {
-                                renameText = trip.title
-                                tripToRename = trip
-                            }
-                            Button("Edit Trip Details…", systemImage: "calendar.badge.gearshape") {
-                                editStartDate = trip.startDate
-                                editEndDate = trip.endDate
-                                editLocationName = trip.locationName ?? ""
-                                tripToEdit = trip
-                            }
-                            Button(
-                                viewModel.isTripLocked(trip.id)
-                                    ? (trip.isManual ? "Unlock Album" : "Unlock Trip")
-                                    : (trip.isManual ? "Lock Album" : "Lock Trip"),
-                                systemImage: viewModel.isTripLocked(trip.id) ? "lock.open" : "lock"
-                            ) {
-                                viewModel.setTripLocked(trip.id, isLocked: !viewModel.isTripLocked(trip.id))
-                            }
-                            Menu("Change Icon...", systemImage: "paintpalette") {
-                                ForEach(tripIconOptions, id: \.0) { iconName, label in
-                                    Button {
-                                        viewModel.setIcon(iconName, forTripWithID: trip.id)
-                                    } label: {
-                                        Label(label, systemImage: iconName)
-                                    }
-                                }
-                            }
-                            if viewModel.tripAlbums.count > 1 {
-                                Menu("Combine with...", systemImage: "rectangle.2.swap") {
-                                    ForEach(viewModel.tripAlbums.filter { $0.id != trip.id }) { otherTrip in
-                                        Button(otherTrip.title) {
-                                            viewModel.combineTrips(withID: trip.id, and: otherTrip.id)
-                                        }
-                                    }
-                                }
-                            }
-                            if trip.isCombined {
-                                Button("Separate into Trips", systemImage: "rectangle.2.arrowtriangle.2.outward") {
-                                    viewModel.separateTrip(withID: trip.id)
-                                }
-                            }
-                            Button("Hide Trip", systemImage: "eye.slash") {
-                                viewModel.hideTrip(withID: trip.id)
-                            }
-                        }
-                    }
-                } header: {
-                    HStack {
-                        Text("Trips & Albums")
-                        Spacer()
-                        Button {
-                            newAlbumTitle = ""
-                            isCreatingAlbum = true
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Create Album")
-                        .accessibilityLabel("Create Album")
-                    }
-                }
-
-                if let source = activeSource {
-                    let years = groupedYears(for: source)
-                    let yearKeys = years.keys.sorted(by: >)
-                    if !yearKeys.isEmpty {
-                        ForEach(yearKeys, id: \.self) { year in
-                            Section(header: Text(String(year))) {
-                                Label("All \(String(year))", systemImage: "photo.stack")
-                                    .tag(SidebarSelection.sourceYear(source, year))
-                                if let monthsInYear = years[year] {
-                                    ForEach(monthsInYear) { month in
-                                        Label(month.monthString, systemImage: "calendar")
-                                            .tag(SidebarSelection.sourceMonth(source, month.id))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if !viewModel.sortedYears.isEmpty {
-                    ForEach(viewModel.sortedYears, id: \.self) { year in
-                        Section(header: Text(String(year))) {
-                            // Optionally let user select the whole year
-                            Label("All \(String(year))", systemImage: "photo.stack")
-                                .tag(SidebarSelection.year(year))
-                            
-                            // Let user select specific month in that year
-                            if let monthsInYear = viewModel.groupedYears[year] {
-                                ForEach(monthsInYear) { month in
-                                    Label(month.monthString, systemImage: "calendar")
-                                        .tag(SidebarSelection.month(month.id))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Photo Viewer")
-            .toolbar {
-                ToolbarItem(placement: .automatic) {
-                    if viewModel.isScanning {
-                        if !viewModel.photoMonths.isEmpty {
-                            Button(action: {}) {
-                                ProgressView()
-                                    .controlSize(.small)
-                            }
-                            .disabled(true)
-                            .help("Scanning…")
-                        }
-                    } else {
-                        Button(action: { viewModel.scanAllDirectories(showLoading: false) }) {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
-                        .help("Scan folders for new photos")
-                    }
-                }
-            }
+            sidebarView
         } detail: {
             detailView
         }
-        .overlay {
-            if let photo = viewModel.selectedPhoto {
-                ZStack {
-                    Color.black.opacity(0.5)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
-                                viewModel.selectedPhoto = nil
-                            }
-                        }
-                        .transition(.opacity)
-                    
-                    PreviewView(photo: photo, viewModel: viewModel)
-                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                }
-                .zIndex(1)
-            }
-        }
         .frame(minWidth: 800, minHeight: 600)
-        .onAppear {
-            viewModel.loadDirectories()
-        }
-        .onChange(of: viewModel.photoMonths) { _ in
-            if let currentSelection = selection, validatedSelection != currentSelection {
-                selection = validatedSelection
-            }
-        }
-        .onChange(of: viewModel.selectedDirectories) { _ in
-            if let currentSelection = selection, validatedSelection != currentSelection {
-                selection = validatedSelection
-            }
-        }
-        .alert("Rename Trip", isPresented: Binding(
-            get: { tripToRename != nil },
-            set: { isPresented in
-                if !isPresented { tripToRename = nil }
-            }
-        )) {
-            TextField("Trip name", text: $renameText)
-            Button("Cancel", role: .cancel) { tripToRename = nil }
-            Button("Rename") {
-                if let tripToRename {
-                    viewModel.renameTrip(withID: tripToRename.id, title: renameText)
-                }
-                tripToRename = nil
-            }
-        }
+        .overlay { previewOverlay }
+        .overlay(alignment: .bottom) { undoRemovalBanner }
+        .onAppear { viewModel.loadDirectories() }
+        .onChange(of: viewModel.photoMonths) { _ in syncSelection() }
+        .onChange(of: viewModel.selectedDirectories) { _ in syncSelection() }
+        .onChange(of: viewModel.tripAlbums) { _ in syncSelection() }
         .sheet(isPresented: $isCreatingAlbum) {
             createAlbumSheet(for: [])
         }
@@ -295,38 +95,263 @@ struct ContentView: View {
         .sheet(item: $tripToEdit) { trip in
             editTripSheet(for: trip)
         }
-        .overlay(alignment: .bottom) {
-            if let removal = viewModel.undoableTripRemoval {
-                HStack(spacing: 14) {
-                    Text("Removed \(removal.photos.count) photo\(removal.photos.count == 1 ? "" : "s") from \(removal.tripTitle)")
-                        .lineLimit(1)
-                    Button("Undo") {
-                        viewModel.undoLastTripPhotoRemoval()
+        .albumAndPhotoDialogs(
+            viewModel: viewModel,
+            tripToRename: $tripToRename,
+            renameText: $renameText,
+            albumToDelete: $albumToDelete,
+            showingBatchDeleteConfirmation: $showingBatchDeleteConfirmation
+        )
+    }
+
+    private func syncSelection() {
+        if let currentSelection = selection, validatedSelection != currentSelection {
+            selection = validatedSelection
+        }
+    }
+
+    private var sidebarView: some View {
+        List(selection: $selection) {
+            librarySection
+            sourcesSection
+            tripsSection
+            timelineSection
+        }
+        .navigationTitle("Photo Viewer")
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                if viewModel.isScanning {
+                    if !viewModel.photoMonths.isEmpty {
+                        Button(action: {}) {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        .disabled(true)
+                        .help("Scanning…")
                     }
-                    .buttonStyle(.borderedProminent)
-                    Button {
-                        viewModel.dismissTripPhotoRemoval(withID: removal.id)
-                    } label: {
-                        Image(systemName: "xmark")
+                } else {
+                    Button(action: { viewModel.scanAllDirectories(showLoading: false) }) {
+                        Label("Refresh", systemImage: "arrow.clockwise")
                     }
-                    .buttonStyle(.plain)
-                    .help("Dismiss")
-                    .accessibilityLabel("Dismiss undo message")
+                    .help("Scan folders for new photos")
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.regularMaterial, in: Capsule())
-                .padding(.bottom, 16)
-                .shadow(radius: 8)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .task(id: removal.id) {
-                    do {
-                        try await Task.sleep(nanoseconds: 5_000_000_000)
-                    } catch {
-                        return
+            }
+        }
+    }
+
+    private var librarySection: some View {
+        Section {
+            Label("All Photos", systemImage: "photo.on.rectangle")
+                .tag(SidebarSelection.allPhotos)
+            
+            Label("Favorites", systemImage: "heart.fill")
+                .tag(SidebarSelection.favorites)
+                .foregroundColor(selection == .favorites ? .white : .brown)
+        }
+    }
+
+    @ViewBuilder
+    private var sourcesSection: some View {
+        if !viewModel.selectedDirectories.isEmpty {
+            Section(header: Text("Sources")) {
+                Label("All Sources", systemImage: "tray.full")
+                    .tag(SidebarSelection.allPhotos)
+                ForEach(viewModel.selectedDirectories, id: \.self) { directory in
+                    Label(directory.lastPathComponent, systemImage: "folder")
+                        .tag(SidebarSelection.source(directory))
+                }
+            }
+        }
+    }
+
+    private var tripsSection: some View {
+        Section {
+            ForEach(viewModel.tripAlbums) { trip in
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(trip.title)
+                        Text(trip.photos.isEmpty ? "Empty album" : trip.dateRange)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
+                } icon: {
+                    Image(systemName: viewModel.iconName(for: trip))
+                        .foregroundStyle(.secondary)
+                        .overlay(alignment: .bottomTrailing) {
+                            if viewModel.isTripLocked(trip.id) {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .padding(2)
+                                    .background(.background, in: Circle())
+                                    .offset(x: 4, y: 3)
+                            }
+                        }
+                }
+                .tag(SidebarSelection.trip(trip.id))
+                .contextMenu {
+                    Button(trip.isManual ? "Rename Album" : "Rename Trip", systemImage: "pencil") {
+                        renameText = trip.title
+                        tripToRename = trip
+                    }
+                    if !trip.isManual {
+                        Button("Edit Trip Details…", systemImage: "calendar.badge.gearshape") {
+                            editStartDate = trip.startDate
+                            editEndDate = trip.endDate
+                            editLocationName = trip.locationName ?? ""
+                            tripToEdit = trip
+                        }
+                    }
+                    Button(
+                        viewModel.isTripLocked(trip.id)
+                            ? (trip.isManual ? "Unlock Album" : "Unlock Trip")
+                            : (trip.isManual ? "Lock Album" : "Lock Trip"),
+                        systemImage: viewModel.isTripLocked(trip.id) ? "lock.open" : "lock"
+                    ) {
+                        viewModel.setTripLocked(trip.id, isLocked: !viewModel.isTripLocked(trip.id))
+                    }
+                    Menu("Change Icon...", systemImage: "paintpalette") {
+                        ForEach(tripIconOptions, id: \.0) { iconName, label in
+                            Button {
+                                viewModel.setIcon(iconName, forTripWithID: trip.id)
+                            } label: {
+                                Label(label, systemImage: iconName)
+                            }
+                        }
+                    }
+                    if viewModel.tripAlbums.count > 1 {
+                        Menu("Combine with...", systemImage: "rectangle.2.swap") {
+                            ForEach(viewModel.tripAlbums.filter { $0.id != trip.id }) { otherTrip in
+                                Button(otherTrip.title) {
+                                    viewModel.combineTrips(withID: trip.id, and: otherTrip.id)
+                                }
+                            }
+                        }
+                    }
+                    if trip.isCombined {
+                        Button("Separate into Trips", systemImage: "rectangle.2.arrowtriangle.2.outward") {
+                            viewModel.separateTrip(withID: trip.id)
+                        }
+                    }
+                    if trip.isManual {
+                        Divider()
+                        Button(role: .destructive) {
+                            albumToDelete = trip
+                        } label: {
+                            Label("Delete Album", systemImage: "trash")
+                        }
+                    } else {
+                        Button("Hide Trip", systemImage: "eye.slash") {
+                            viewModel.hideTrip(withID: trip.id)
+                        }
+                    }
+                }
+            }
+        } header: {
+            HStack {
+                Text("Trips & Albums")
+                Spacer()
+                Button {
+                    newAlbumTitle = ""
+                    isCreatingAlbum = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .help("Create Album")
+                .accessibilityLabel("Create Album")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var timelineSection: some View {
+        if let source = activeSource {
+            let years = groupedYears(for: source)
+            let yearKeys = years.keys.sorted(by: >)
+            if !yearKeys.isEmpty {
+                ForEach(yearKeys, id: \.self) { year in
+                    Section(header: Text(String(year))) {
+                        Label("All \(String(year))", systemImage: "photo.stack")
+                            .tag(SidebarSelection.sourceYear(source, year))
+                        if let monthsInYear = years[year] {
+                            ForEach(monthsInYear) { month in
+                                Label(month.monthString, systemImage: "calendar")
+                                    .tag(SidebarSelection.sourceMonth(source, month.id))
+                            }
+                        }
+                    }
+                }
+            }
+        } else if !viewModel.sortedYears.isEmpty {
+            ForEach(viewModel.sortedYears, id: \.self) { year in
+                Section(header: Text(String(year))) {
+                    Label("All \(String(year))", systemImage: "photo.stack")
+                        .tag(SidebarSelection.year(year))
+                    
+                    if let monthsInYear = viewModel.groupedYears[year] {
+                        ForEach(monthsInYear) { month in
+                            Label(month.monthString, systemImage: "calendar")
+                                .tag(SidebarSelection.month(month.id))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var previewOverlay: some View {
+        if let photo = viewModel.selectedPhoto {
+            ZStack {
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.18, dampingFraction: 0.85)) {
+                            viewModel.selectedPhoto = nil
+                        }
+                    }
+                    .transition(.opacity)
+                
+                PreviewView(photo: photo, viewModel: viewModel)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+            .zIndex(1)
+        }
+    }
+
+    @ViewBuilder
+    private var undoRemovalBanner: some View {
+        if let removal = viewModel.undoableTripRemoval {
+            HStack(spacing: 14) {
+                Text("Removed \(removal.photos.count) photo\(removal.photos.count == 1 ? "" : "s") from \(removal.tripTitle)")
+                    .lineLimit(1)
+                Button("Undo") {
+                    viewModel.undoLastTripPhotoRemoval()
+                }
+                .buttonStyle(.borderedProminent)
+                Button {
                     viewModel.dismissTripPhotoRemoval(withID: removal.id)
+                } label: {
+                    Image(systemName: "xmark")
                 }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+                .accessibilityLabel("Dismiss undo message")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.bottom, 16)
+            .shadow(radius: 8)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .task(id: removal.id) {
+                do {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                } catch {
+                    return
+                }
+                viewModel.dismissTripPhotoRemoval(withID: removal.id)
             }
         }
     }
@@ -460,6 +485,16 @@ struct ContentView: View {
                 .keyboardShortcut("c", modifiers: .command)
                 .disabled(viewModel.selectedPhotos.isEmpty)
 
+                Button {
+                    viewModel.toggleFavorites(for: viewModel.selectedPhotos)
+                } label: {
+                    let allFav = !viewModel.selectedPhotos.isEmpty && viewModel.selectedPhotos.allSatisfy { viewModel.isFavorite(photo: $0) }
+                    Image(systemName: allFav ? "heart.slash" : "heart.fill")
+                }
+                .help("Toggle favorite for selected photos")
+                .accessibilityLabel("Toggle favorite for selected photos")
+                .disabled(viewModel.selectedPhotos.isEmpty)
+
                 Menu {
                     ForEach(viewModel.tripAlbums) { trip in
                         Button(trip.title) {
@@ -468,27 +503,41 @@ struct ContentView: View {
                         }
                     }
                     Divider()
-                    Button("New Trip…", systemImage: "plus") {
+                    Button("New Album…", systemImage: "plus") {
                         viewModel.requestNewAlbum(with: viewModel.selectedPhotos)
                         viewModel.finishPhotoSelection()
                     }
                 } label: {
                     Image(systemName: "plus.rectangle.on.rectangle")
                 }
-                .help("Add selected photos to a trip")
+                .help("Add selected photos to an album")
+                .accessibilityLabel("Add selected photos to an album")
                 .disabled(viewModel.selectedPhotoPaths.isEmpty)
 
                 if case .trip(let tripID) = validatedSelection {
+                    let isManual = viewModel.tripAlbum(withID: tripID)?.isManual == true
                     Button(role: .destructive) {
                         viewModel.removePhotos(viewModel.selectedPhotos, fromTripWithID: tripID)
                         viewModel.finishPhotoSelection()
                     } label: {
                         Image(systemName: "minus.rectangle")
                     }
-                    .help("Remove selected photos from this trip")
-                    .accessibilityLabel("Remove selected photos from this trip")
+                    .help(isManual ? "Remove selected photos from this album" : "Remove selected photos from this trip")
+                    .accessibilityLabel(isManual ? "Remove selected photos from this album" : "Remove selected photos from this trip")
                     .disabled(viewModel.selectedPhotoPaths.isEmpty)
                 }
+
+                Button(role: .destructive) {
+                    showingBatchDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .help("Move selected photos to Trash")
+                .accessibilityLabel("Move selected photos to Trash")
+                .disabled(viewModel.selectedPhotos.isEmpty)
+
+                Divider()
+                    .frame(height: 18)
 
                 Button(role: .cancel) {
                     viewModel.finishPhotoSelection()
@@ -700,5 +749,64 @@ struct ContentView: View {
             .buttonStyle(.bordered)
         }
         .padding(32)
+    }
+}
+
+// MARK: - Dialog Modifiers Extension
+private extension View {
+    func albumAndPhotoDialogs(
+        viewModel: PhotoViewModel,
+        tripToRename: Binding<TripAlbum?>,
+        renameText: Binding<String>,
+        albumToDelete: Binding<TripAlbum?>,
+        showingBatchDeleteConfirmation: Binding<Bool>
+    ) -> some View {
+        self
+            .alert(tripToRename.wrappedValue?.isManual == true ? "Rename Album" : "Rename Trip", isPresented: Binding(
+                get: { tripToRename.wrappedValue != nil },
+                set: { isPresented in
+                    if !isPresented { tripToRename.wrappedValue = nil }
+                }
+            )) {
+                TextField(tripToRename.wrappedValue?.isManual == true ? "Album name" : "Trip name", text: renameText)
+                Button("Cancel", role: .cancel) { tripToRename.wrappedValue = nil }
+                Button("Rename") {
+                    if let trip = tripToRename.wrappedValue {
+                        viewModel.renameTrip(withID: trip.id, title: renameText.wrappedValue)
+                    }
+                    tripToRename.wrappedValue = nil
+                }
+            }
+            .alert(
+                "Delete Album",
+                isPresented: Binding(
+                    get: { albumToDelete.wrappedValue != nil },
+                    set: { isPresented in
+                        if !isPresented { albumToDelete.wrappedValue = nil }
+                    }
+                ),
+                presenting: albumToDelete.wrappedValue
+            ) { album in
+                Button("Cancel", role: .cancel) { albumToDelete.wrappedValue = nil }
+                Button("Delete Album", role: .destructive) {
+                    viewModel.deleteAlbum(withID: album.id)
+                    albumToDelete.wrappedValue = nil
+                }
+            } message: { album in
+                Text("Are you sure you want to delete \"\(album.title)\"? The photos in this album will remain in your library.")
+            }
+            .alert(
+                "Delete Photos",
+                isPresented: showingBatchDeleteConfirmation
+            ) {
+                Button("Cancel", role: .cancel) {}
+                Button("Move to Trash", role: .destructive) {
+                    viewModel.deletePhotos(viewModel.selectedPhotos)
+                    viewModel.finishPhotoSelection()
+                }
+            } message: {
+                let count = viewModel.selectedPhotos.count
+                Text("Are you sure you want to move \(count) selected photo\(count == 1 ? "" : "s") to the Trash?")
+            }
     }
 }

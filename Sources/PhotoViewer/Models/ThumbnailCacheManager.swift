@@ -51,6 +51,11 @@ class ThumbnailCacheManager: @unchecked Sendable {
         diskLayer.clear()
     }
     
+    /// Returns the approximate total size of disk-cached thumbnails in bytes.
+    func diskCacheSize() -> Int64 {
+        return diskLayer.diskCacheSize()
+    }
+    
     // MARK: - Private Helpers
     
     /// Generates a stable cache key from a URL.

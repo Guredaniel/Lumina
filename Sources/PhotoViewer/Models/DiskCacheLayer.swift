@@ -108,9 +108,23 @@ class DiskCacheLayer {
         try? fileManager.removeItem(at: cacheDirectory)
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
     }
+
+    /// Returns the approximate disk size of all cached thumbnails in bytes.
+    func diskCacheSize() -> Int64 {
+        guard let resources = try? fileManager.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return 0
+        }
+        var total: Int64 = 0
+        for resource in resources {
+            if let values = try? resource.resourceValues(forKeys: [.fileSizeKey]), let size = values.fileSize {
+                total += Int64(size)
+            }
+        }
+        return total
+    }
     
     /// Gets or creates the cache directory URL.
-    private static func getCacheDirectory() -> URL {
+    static func getCacheDirectory() -> URL {
         if let cachePath = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
             return cachePath.appendingPathComponent("com.photoviewer/thumbnails")
         }

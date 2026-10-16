@@ -5,7 +5,11 @@ import Foundation
 @MainActor
 class PhotoViewModel: ObservableObject {
     // MARK: - Published Properties (View State)
-    @Published var photoMonths: [PhotoMonth] = []
+    @Published var photoMonths: [PhotoMonth] = [] {
+        didSet {
+            updateDerivedData()
+        }
+    }
     @Published var isLoading = false
     @Published var selectedPhoto: Photo? = nil
     @Published var isScanning = false
@@ -113,6 +117,20 @@ class PhotoViewModel: ObservableObject {
     
     func toggleFavorite(photo: Photo) {
         favoriteManager.toggleFavorite(photoPath: photo.url.path)
+        favoritePaths = favoriteManager.favoritePaths
+        updateDerivedData()
+    }
+
+    func toggleFavorites(for photos: [Photo]) {
+        guard !photos.isEmpty else { return }
+        let allAreFavorites = photos.allSatisfy { isFavorite(photo: $0) }
+        for photo in photos {
+            if allAreFavorites {
+                favoriteManager.removeFavorite(photoPath: photo.url.path)
+            } else {
+                favoriteManager.addFavorite(photoPath: photo.url.path)
+            }
+        }
         favoritePaths = favoriteManager.favoritePaths
         updateDerivedData()
     }
@@ -289,6 +307,42 @@ class PhotoViewModel: ObservableObject {
         persistUserCreatedAlbums()
         refreshTripAlbums()
         return tripAlbum(withID: record.id)
+    }
+
+    func deleteAlbum(withID id: String) {
+        guard let index = userCreatedAlbums.firstIndex(where: { $0.id == id }) else { return }
+        userCreatedAlbums.remove(at: index)
+        persistUserCreatedAlbums()
+
+        addedTripPhotoPaths.removeValue(forKey: id)
+        removedTripPhotoPaths.removeValue(forKey: id)
+        persistTripMembership()
+
+        tripIcons.removeValue(forKey: id)
+        UserDefaults.standard.set(tripIcons, forKey: AppConstants.UserDefaultsKeys.tripIcons)
+
+        renamedTripTitles.removeValue(forKey: id)
+        UserDefaults.standard.set(renamedTripTitles, forKey: AppConstants.UserDefaultsKeys.tripRenamedTitles)
+
+        tripStartDates.removeValue(forKey: id)
+        tripEndDates.removeValue(forKey: id)
+        tripLocationNames.removeValue(forKey: id)
+        persistTripDetails()
+
+        lockedTripSnapshots.removeValue(forKey: id)
+        persistLockedTripSnapshots()
+
+        hiddenTripIDs.remove(id)
+        UserDefaults.standard.set(Array(hiddenTripIDs), forKey: AppConstants.UserDefaultsKeys.hiddenTripIDs)
+
+        combinedTripGroups.removeAll { $0.contains(id) }
+        UserDefaults.standard.set(combinedTripGroups, forKey: AppConstants.UserDefaultsKeys.combinedTripGroups)
+
+        if undoableTripRemoval?.tripID == id {
+            undoableTripRemoval = nil
+        }
+
+        refreshTripAlbums()
     }
 
     func requestNewAlbum(with photos: [Photo]) {
@@ -639,45 +693,58 @@ class PhotoViewModel: ObservableObject {
     // MARK: - Photo Management
     
     func deletePhoto(_ photo: Photo) {
-        do {
-            // Move file to trash
-            try FileManager.default.trashItem(at: photo.url, resultingItemURL: nil)
-            
-            // Move associated live photo video to trash if it exists
-            if let videoURL = photo.videoURL, FileManager.default.fileExists(atPath: videoURL.path) {
-                try? FileManager.default.trashItem(at: videoURL, resultingItemURL: nil)
-            }
-            
-            // Delete from SQLite database
-            var pathsToDelete = [photo.url.path]
-            if let videoURL = photo.videoURL {
-                pathsToDelete.append(videoURL.path)
-            }
-            SQLiteDatabase.shared.deletePhotos(paths: pathsToDelete)
-            
-            // Remove from the photoMonths array
-            for i in 0..<photoMonths.count {
-                if let photoIndex = photoMonths[i].photos.firstIndex(where: { $0.url == photo.url }) {
-                    var updatedPhotos = photoMonths[i].photos
-                    updatedPhotos.remove(at: photoIndex)
-                    
-                    if updatedPhotos.isEmpty {
-                        photoMonths.remove(at: i)
-                    } else {
-                        photoMonths[i] = PhotoMonth(year: photoMonths[i].year, month: photoMonths[i].month, photos: updatedPhotos)
-                    }
-                    break
+        deletePhotos([photo])
+    }
+
+    func deletePhotos(_ photos: [Photo]) {
+        guard !photos.isEmpty else { return }
+        var deletedPaths = Set<String>()
+        var pathsToDeleteFromDB: [String] = []
+        var lastError: Error?
+
+        for photo in photos {
+            do {
+                // Move file to trash
+                try FileManager.default.trashItem(at: photo.url, resultingItemURL: nil)
+                deletedPaths.insert(photo.url.path)
+                pathsToDeleteFromDB.append(photo.url.path)
+
+                // Move associated live photo video to trash if it exists
+                if let videoURL = photo.videoURL, FileManager.default.fileExists(atPath: videoURL.path) {
+                    try? FileManager.default.trashItem(at: videoURL, resultingItemURL: nil)
+                    pathsToDeleteFromDB.append(videoURL.path)
                 }
+            } catch {
+                lastError = error
             }
-            
-            updateDerivedData()
-            refreshTripAlbums()
-            if selectedPhoto == photo {
-                selectedPhoto = nil
-            }
-        } catch {
-            self.errorMessage = "Failed to move photo to trash: \(error.localizedDescription)"
         }
+
+        if let error = lastError {
+            self.errorMessage = "Failed to move one or more photos to trash: \(error.localizedDescription)"
+        }
+
+        guard !deletedPaths.isEmpty else { return }
+
+        // Delete from SQLite database
+        SQLiteDatabase.shared.deletePhotos(paths: pathsToDeleteFromDB)
+
+        // Remove from the photoMonths array
+        var updatedMonths: [PhotoMonth] = []
+        for month in photoMonths {
+            let remaining = month.photos.filter { !deletedPaths.contains($0.url.path) }
+            if !remaining.isEmpty {
+                updatedMonths.append(PhotoMonth(year: month.year, month: month.month, photos: remaining))
+            }
+        }
+        photoMonths = updatedMonths
+
+        selectedPhotoPaths.subtract(deletedPaths)
+        if let current = selectedPhoto, deletedPaths.contains(current.url.path) {
+            selectedPhoto = nil
+        }
+
+        updateDerivedData()
+        refreshTripAlbums()
     }
     
     func clearPhotos() {

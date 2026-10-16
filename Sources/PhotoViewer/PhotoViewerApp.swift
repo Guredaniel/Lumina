@@ -26,15 +26,16 @@ struct PhotoViewerApp: App {
             }
             
             // MARK: - Edit Menu
-            CommandGroup(after: .newItem) {
-                Button("Add to Favorites") {
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                
+                Button(viewModel.selectedPhoto.map { viewModel.isFavorite(photo: $0) ? "Remove from Favorites" : "Add to Favorites" } ?? "Add to Favorites") {
                     if let photo = viewModel.selectedPhoto {
                         viewModel.toggleFavorite(photo: photo)
                     }
                 }
+                .keyboardShortcut("d", modifiers: .command)
                 .disabled(viewModel.selectedPhoto == nil)
-                
-                Divider()
                 
                 Button("Delete") {
                     if let photo = viewModel.selectedPhoto {

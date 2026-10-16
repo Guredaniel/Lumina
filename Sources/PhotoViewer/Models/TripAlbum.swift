@@ -1,6 +1,6 @@
 import Foundation
 
-struct TripAlbum: Identifiable, Sendable {
+struct TripAlbum: Identifiable, Sendable, Equatable {
     let id: String
     let title: String
     let startDate: Date

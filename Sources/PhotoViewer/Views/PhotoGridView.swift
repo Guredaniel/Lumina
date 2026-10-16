@@ -216,20 +216,21 @@ struct PhotoThumbnailView: View {
                     Label("Show in Finder", systemImage: "folder")
                 }
 
-                Menu("Add to Trip...", systemImage: "plus.rectangle.on.rectangle") {
+                Menu("Add to Album...", systemImage: "plus.rectangle.on.rectangle") {
                     ForEach(viewModel.tripAlbums.filter { $0.id != tripID }) { trip in
                         Button(trip.title) {
                             viewModel.addPhoto(photo, toTripWithID: trip.id)
                         }
                     }
                     Divider()
-                    Button("New Trip…", systemImage: "plus") {
+                    Button("New Album…", systemImage: "plus") {
                         viewModel.requestNewAlbum(with: [photo])
                     }
                 }
 
                 if let tripID {
-                    Button("Remove from Trip", systemImage: "minus.rectangle") {
+                    let isManual = viewModel.tripAlbum(withID: tripID)?.isManual == true
+                    Button(isManual ? "Remove from Album" : "Remove from Trip", systemImage: "minus.rectangle") {
                         viewModel.removePhoto(photo, fromTripWithID: tripID)
                     }
                 }

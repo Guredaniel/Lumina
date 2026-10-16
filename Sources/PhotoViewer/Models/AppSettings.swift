@@ -94,7 +94,7 @@ class AppSettings: ObservableObject {
         enableLivePhotos = true
         livePhotoPlaybackMode = "once"
         automaticTripDetection = true
-        tripMinimumPhotos = 5
+        tripMinimumPhotos = 10
         tripLocationRadius = 75
         tripMaximumTimeGap = 36
     }

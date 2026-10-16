@@ -5,6 +5,9 @@ struct SettingsView: View {
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var showingRestoreTrips = false
     @State private var selectedHiddenTripIDs: Set<String> = []
+    @State private var cacheSizeBytes: Int64 = 0
+    @State private var showingClearCacheAlert = false
+    @State private var showingResetDefaultsAlert = false
 
     var body: some View {
         TabView {
@@ -19,6 +22,10 @@ struct SettingsView: View {
             directorySettings
                 .tabItem {
                     Label("Directories", systemImage: "folder")
+                }
+            storageSettings
+                .tabItem {
+                    Label("Storage", systemImage: "internaldrive")
                 }
         }
         .frame(minWidth: 560, minHeight: 460)
@@ -222,5 +229,70 @@ struct SettingsView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
         }
+    }
+
+    private var storageSettings: some View {
+        Form {
+            Section("Thumbnail Cache") {
+                LabeledContent("Location") {
+                    Text(AppSettings.shared.thumbnailCachePath.path)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                LabeledContent("Disk Usage") {
+                    Text(ByteCountFormatter.string(fromByteCount: cacheSizeBytes, countStyle: .file))
+                        .monospacedDigit()
+                }
+
+                Button("Clear Thumbnail Cache…") {
+                    showingClearCacheAlert = true
+                }
+            }
+
+            Section("Preferences") {
+                Button("Reset All Settings to Defaults…") {
+                    showingResetDefaultsAlert = true
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .onAppear {
+            refreshCacheSize()
+        }
+        .confirmationDialog(
+            "Clear Thumbnail Cache?",
+            isPresented: $showingClearCacheAlert,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Cache", role: .destructive) {
+                ThumbnailCacheManager.shared.clear()
+                refreshCacheSize()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All cached thumbnails on disk will be removed and re-rendered as needed.")
+        }
+        .confirmationDialog(
+            "Reset Settings?",
+            isPresented: $showingResetDefaultsAlert,
+            titleVisibility: .visible
+        ) {
+            Button("Reset to Defaults", role: .destructive) {
+                appSettings.resetToDefaults()
+                viewModel.refreshTripAlbums()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All settings will be restored to their factory defaults.")
+        }
+    }
+
+    private func refreshCacheSize() {
+        cacheSizeBytes = ThumbnailCacheManager.shared.diskCacheSize()
     }
 }
