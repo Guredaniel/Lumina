@@ -14,50 +14,23 @@ A native macOS app built with SwiftUI that displays photos organized by month wi
 
 ## System Requirements
 
-- macOS 13.0 or later
-- Xcode 15.3 or later (for building)
-- Swift 5.0 or later
+- macOS 27.0 or later
+- Xcode or Swift toolchain with Swift 6.4 or later (for building)
 
 ## Setup & Building
 
-### Option 1: Build with Xcode (Recommended)
-
-1. **Open the Project in Xcode:**
-   ```bash
-   open ~/PhotoViewer/PhotoViewer.xcodeproj
-   ```
-
-2. **Select the Target:**
-   - Ensure "Lumina" is selected as the active scheme in the top toolbar
-
-3. **Build:**
-   - Press `Cmd + B` or go to `Product > Build`
-
-4. **Run:**
-   - Press `Cmd + R` or go to `Product > Run`
-
-### Option 2: Build from Command Line
+Clone the repository, then use the build script to create a macOS app bundle:
 
 ```bash
-cd ~/PhotoViewer
-
-# Build the app
-xcodebuild -project PhotoViewer.xcodeproj -scheme Lumina -configuration Release
-
-# Run the app
-open ./build/Release/Lumina.app
+git clone https://github.com/Guredaniel/PhotoViewer.git
+cd PhotoViewer
+./build.sh release
 ```
 
-### Option 3: Build with Swift Package Manager
+The release build creates `build/Lumina.app` and launches it. To build without creating an app bundle, use Swift Package Manager directly:
 
 ```bash
-cd ~/PhotoViewer
-
-# Build
-swift build -c release
-
-# Run
-./.build/release/Lumina
+swift build --configuration release
 ```
 
 ## Project Structure
@@ -81,9 +54,7 @@ PhotoViewer/
 │   └── PhotoViewerApp.swift         # App entry point
 ├── Info.plist                        # App configuration
 ├── Package.swift                     # Swift package manifest
-└── PhotoViewer.xcodeproj/            # Xcode project file
-    ├── project.pbxproj              # Project configuration
-    └── project.xcworkspace/         # Workspace data
+└── build.sh                           # SwiftPM app bundle build script
 ```
 
 ## Usage
@@ -147,14 +118,14 @@ PhotoViewer/
 To create a signed and notarized app for distribution:
 
 ```bash
-# Build with release configuration
-xcodebuild -project PhotoViewer.xcodeproj -scheme Lumina -configuration Release -derivedDataPath build
+# Build the app bundle
+./build.sh release
 
 # Sign the app (requires Developer ID)
-codesign --deep --force --verify --verbose --sign "Developer ID Application" ./build/Release/Lumina.app
+codesign --deep --force --verify --verbose --sign "Developer ID Application" ./build/Lumina.app
 
 # Create DMG for distribution
-hdiutil create -volname Lumina -srcfolder ./build/Release/Lumina.app -ov -format UDZO Lumina.dmg
+hdiutil create -volname Lumina -srcfolder ./build/Lumina.app -ov -format UDZO Lumina.dmg
 ```
 
 ## Development Notes
