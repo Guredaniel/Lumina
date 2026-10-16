@@ -44,6 +44,63 @@ final class TripDetectionServiceTests: XCTestCase {
         XCTAssertEqual(albums.map(\.photos.count).sorted(), [2, 2])
     }
 
+    func testIncludesPhotosAtExactTimeGapAndSortsPhotosByDate() {
+        let startDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let earlierPhoto = Photo(
+            url: URL(fileURLWithPath: "/tmp/earlier.jpg"),
+            date: startDate,
+            latitude: 56.95,
+            longitude: 24.10
+        )
+        let laterPhoto = Photo(
+            url: URL(fileURLWithPath: "/tmp/later.jpg"),
+            date: startDate.addingTimeInterval(36 * 3600),
+            latitude: 56.95,
+            longitude: 24.10
+        )
+        let service = TripDetectionService(minimumPhotos: 2, locationRadiusKilometers: 100, maximumTimeGapHours: 36)
+
+        let albums = service.detectTrips(in: [laterPhoto, earlierPhoto])
+
+        XCTAssertEqual(albums.count, 1)
+        XCTAssertEqual(albums[0].startDate, earlierPhoto.date)
+        XCTAssertEqual(albums[0].endDate, laterPhoto.date)
+        XCTAssertEqual(albums[0].photos.map(\.url), [laterPhoto.url, earlierPhoto.url])
+    }
+
+    func testDiscardsGroupsSmallerThanMinimumPhotoCount() {
+        let startDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let photos = makePhotos(count: 2, startDate: startDate, latitude: 56.95, longitude: 24.10)
+        let service = TripDetectionService(minimumPhotos: 3, locationRadiusKilometers: 100, maximumTimeGapHours: 36)
+
+        let albums = service.detectTrips(in: photos)
+
+        XCTAssertTrue(albums.isEmpty)
+    }
+
+    func testIgnoresCoordinatesOutsideValidRanges() {
+        let startDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let photos = [
+            Photo(
+                url: URL(fileURLWithPath: "/tmp/invalid-latitude.jpg"),
+                date: startDate,
+                latitude: 90.01,
+                longitude: 24.10
+            ),
+            Photo(
+                url: URL(fileURLWithPath: "/tmp/invalid-longitude.jpg"),
+                date: startDate.addingTimeInterval(60),
+                latitude: 56.95,
+                longitude: -180.01
+            )
+        ]
+        let service = TripDetectionService(minimumPhotos: 1, locationRadiusKilometers: 100, maximumTimeGapHours: 36)
+
+        let albums = service.detectTrips(in: photos)
+
+        XCTAssertTrue(albums.isEmpty)
+    }
+
     func testPersistsParsedGPSCoordinatesInSQLite() {
         let databaseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("PhotoViewerTests-\(UUID().uuidString).sqlite")
