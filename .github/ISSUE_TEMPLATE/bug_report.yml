@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a problem with Lumina
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Please do not attach personal photos or include full file paths, GPS
+        coordinates, or other identifying photo metadata. Review and redact
+        logs before posting.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you were doing.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: List the steps using example folders or non-private test images.
+      placeholder: |
+        1. Open Lumina
+        2. Add a folder containing test images
+        3. Select a photo
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Lumina version
+      placeholder: "1.4"
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "27.0"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs (optional)
+      description: Redact usernames, full paths, coordinates, and other private data before sharing.
+      render: text

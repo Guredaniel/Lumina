@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest an improvement for Lumina
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the workflow or limitation behind the request.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like to happen?
+      description: Describe the behavior or capability you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered (optional)
+      description: Mention any existing workaround or alternative you have tried.
