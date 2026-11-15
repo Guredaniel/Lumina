@@ -180,7 +180,7 @@ class PhotoScanner: @unchecked Sendable {
         let typeIdentifier = resourceValues.typeIdentifier
         let fileExtension = fileURL.pathExtension.lowercased()
         let isVideo = isVideoType(typeIdentifier: typeIdentifier, fileExtension: fileExtension)
-        let date = resourceValues.contentModificationDate ?? resourceValues.creationDate ?? Date.distantPast
+        let fileDate = resourceValues.contentModificationDate ?? resourceValues.creationDate ?? Date.distantPast
         
         var videoURL: URL? = nil
         if !isVideo {
@@ -190,6 +190,7 @@ class PhotoScanner: @unchecked Sendable {
         
         // Extract metadata during scan for better performance
         let metadata = isVideo ? [:] : extractMetadata(for: fileURL)
+        let date = isVideo ? fileDate : Self.captureDate(from: metadata, fallback: fileDate)
         
         return Photo(
             url: fileURL.standardized,
@@ -198,6 +199,56 @@ class PhotoScanner: @unchecked Sendable {
             videoURL: videoURL,
             isVideo: isVideo
         )
+    }
+
+    static func captureDate(from metadata: [String: String], fallback: Date) -> Date {
+        let candidates = [
+            (metadata["dateTime"], metadata["dateTimeOffset"]),
+            (metadata["dateTimeDigitized"], metadata["dateTimeDigitizedOffset"]),
+            (metadata["tiffDateTime"], nil)
+        ]
+
+        for (value, offset) in candidates {
+            guard let value else { continue }
+            if let date = parseCaptureDate(value, offset: offset) {
+                return date
+            }
+        }
+
+        return fallback
+    }
+
+    private static func parseCaptureDate(_ value: String, offset: String?) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.isLenient = false
+
+        let formats = ["yyyy:MM:dd HH:mm:ss", "yyyy:MM:dd HH:mm:ss.SSS"]
+        if let offset, !offset.isEmpty {
+            formatter.timeZone = .gmt
+            for format in formats {
+                formatter.dateFormat = "\(format)XXXXX"
+                if let date = formatter.date(from: value + offset) {
+                    return date
+                }
+            }
+        }
+
+        formatter.timeZone = .current
+        for format in formats {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: value) {
+                return date
+            }
+        }
+
+        let isoFormatter = ISO8601DateFormatter()
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return isoFormatter.date(from: value)
     }
     
     /// Detects if an image file has an associated Live Photo video.
@@ -250,12 +301,26 @@ class PhotoScanner: @unchecked Sendable {
             if let dateTime = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String {
                 metadata["dateTime"] = dateTime
             }
+            if let offset = exif["OffsetTimeOriginal"] as? String {
+                metadata["dateTimeOffset"] = offset
+            }
+            if let dateTime = exif[kCGImagePropertyExifDateTimeDigitized as String] as? String {
+                metadata["dateTimeDigitized"] = dateTime
+            }
+            if let offset = exif["OffsetTimeDigitized"] as? String {
+                metadata["dateTimeDigitizedOffset"] = offset
+            }
             if let make = exif["Make"] as? String {
                 metadata["cameraMake"] = make
             }
             if let model = exif["Model"] as? String {
                 metadata["cameraModel"] = model
             }
+        }
+
+        if let tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any],
+           let dateTime = tiff[kCGImagePropertyTIFFDateTime as String] as? String {
+            metadata["tiffDateTime"] = dateTime
         }
         
         // Extract GPS data

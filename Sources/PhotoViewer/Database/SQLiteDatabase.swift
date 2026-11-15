@@ -26,6 +26,7 @@ final class SQLiteDatabase: @unchecked Sendable {
         openDatabase(at: fileURL)
         configurePragmas()
         createTables()
+        refreshPhotoDatesIfNeeded()
         cleanupDuplicateLivePhotoVideos()
     }
     
@@ -115,6 +116,33 @@ final class SQLiteDatabase: @unchecked Sendable {
         executeRaw(createIndexes, db: db)
         executeRaw(createDirectoriesTable, db: db)
         executeRaw(createLocationCacheTable, db: db)
+    }
+
+    private func refreshPhotoDatesIfNeeded() {
+        guard let db else { return }
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &statement, nil) == SQLITE_OK else {
+            print("SQLiteDatabase: Failed to read photo date migration version")
+            return
+        }
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            sqlite3_finalize(statement)
+            print("SQLiteDatabase: Failed to read photo date migration version")
+            return
+        }
+        let version = sqlite3_column_int(statement, 0)
+        sqlite3_finalize(statement)
+
+        guard version < 1 else { return }
+        guard executeRaw("BEGIN IMMEDIATE TRANSACTION;", db: db) else { return }
+
+        let migrated = executeRaw("UPDATE photos SET file_size = -1;", db: db)
+            && executeRaw("PRAGMA user_version = 1;", db: db)
+            && executeRaw("COMMIT;", db: db)
+        if !migrated {
+            executeRaw("ROLLBACK;", db: db)
+        }
     }
 
     private func ensurePhotoLocationColumns(db: OpaquePointer) {
