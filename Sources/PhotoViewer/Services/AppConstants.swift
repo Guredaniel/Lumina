@@ -10,6 +10,7 @@ enum AppConstants {
         static let lastPhotoDirectory = "lastPhotoDirectory" // Legacy key for migration
         static let gridColumns = "gridColumns"
         static let showFilenames = "showFilenames"
+        static let slideshowDefaultInterval = "slideshowDefaultInterval"
         static let enableLivePhotos = "enableLivePhotos"
         static let livePhotoPlaybackMode = "livePhotoPlaybackMode"
         static let automaticTripDetection = "automaticTripDetection"
@@ -58,6 +59,11 @@ enum AppConstants {
         static let minColumnWidth: CGFloat = 150
         static let gridSpacing: CGFloat = 12
         static let gridPadding: CGFloat = 16
+    }
+
+    enum Slideshow {
+        static let intervalOptions = [5, 10, 15, 30]
+        static let defaultInterval = 10
     }
     
     // MARK: - Cache Directory Paths

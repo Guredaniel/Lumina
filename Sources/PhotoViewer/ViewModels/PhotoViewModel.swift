@@ -679,10 +679,13 @@ class PhotoViewModel: ObservableObject {
             ?? groupedYears.values.flatMap { $0 }.first(where: { $0.id == id })
     }
     
-    func nextPhoto(after photo: Photo) -> Photo? {
+    func nextPhoto(after photo: Photo, looping: Bool = false) -> Photo? {
         let all = allPhotosFlat
         guard let index = all.firstIndex(where: { $0.url == photo.url }) else { return nil }
-        return index < all.count - 1 ? all[index + 1] : nil
+        if index < all.count - 1 {
+            return all[index + 1]
+        }
+        return looping ? all.first : nil
     }
     
     func previousPhoto(before photo: Photo) -> Photo? {

@@ -436,6 +436,9 @@ struct PreviewView: View {
     @State private var showMetadata = false
     @State private var slideDirection: CGFloat = 0
     @State private var isFullscreen = false
+    @State private var isSlideshowPlaying = false
+    @State private var slideshowInterval: Int
+    @State private var slideshowTimerResetToken = 0
     @State private var extractedMetadata: [String: String] = [:]
     @State private var preloadedImages: [URL: NSImage] = [:]
     @State private var navigationQueue: [Photo] = []
@@ -451,11 +454,30 @@ struct PreviewView: View {
     @State private var isMetadataButtonHovered = false
     @State private var isLeftNavButtonHovered = false
     @State private var isRightNavButtonHovered = false
+
+    private struct SlideshowTaskKey: Hashable {
+        let isPlaying: Bool
+        let interval: Int
+        let resetToken: Int
+    }
+
+    private var slideshowTaskKey: SlideshowTaskKey {
+        SlideshowTaskKey(
+            isPlaying: isSlideshowPlaying,
+            interval: slideshowInterval,
+            resetToken: slideshowTimerResetToken
+        )
+    }
+
+    private var canPlaySlideshow: Bool {
+        viewModel.allPhotosFlat.count > 1
+    }
     
     init(photo: Photo, viewModel: PhotoViewModel) {
         self.initialPhoto = photo
         self.viewModel = viewModel
         self._currentPhoto = State(initialValue: photo)
+        self._slideshowInterval = State(initialValue: AppSettings.shared.slideshowDefaultInterval)
     }
     
     var body: some View {
@@ -548,7 +570,34 @@ struct PreviewView: View {
                 
                 Spacer()
                 
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
+                    Button(action: toggleSlideshow) {
+                        Image(systemName: isSlideshowPlaying ? "pause.fill" : "play.fill")
+                    }
+                    .disabled(!canPlaySlideshow)
+                    .help(isSlideshowPlaying ? "Pause Slideshow" : "Play Slideshow")
+                    .accessibilityLabel(isSlideshowPlaying ? "Pause slideshow" : "Play slideshow")
+
+                    Menu {
+                        ForEach(AppConstants.Slideshow.intervalOptions, id: \.self) { interval in
+                            Button {
+                                slideshowInterval = interval
+                                slideshowTimerResetToken += 1
+                            } label: {
+                                if slideshowInterval == interval {
+                                    Label("\(interval) seconds", systemImage: "checkmark")
+                                } else {
+                                    Text("\(interval) seconds")
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("\(slideshowInterval)s", systemImage: "timer")
+                    }
+                    .disabled(!canPlaySlideshow)
+                    .help("Slideshow interval")
+                    .accessibilityLabel("Slideshow interval, \(slideshowInterval) seconds")
+
                     Button(action: {
                         withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
                             isFullscreen.toggle()
@@ -686,6 +735,18 @@ struct PreviewView: View {
             geoPlaceName = nil
             isGeocoding = false
         }
+        .onChange(of: viewModel.allPhotosFlat.count) { count in
+            if count < 2 {
+                isSlideshowPlaying = false
+            }
+        }
+        .task(id: slideshowTaskKey) {
+            guard isSlideshowPlaying else { return }
+            await runSlideshow()
+        }
+        .onDisappear {
+            isSlideshowPlaying = false
+        }
     }
     
     @ViewBuilder
@@ -762,11 +823,36 @@ struct PreviewView: View {
             navigateToPhoto(next, direction: 1)
         }
     }
+
+    private func toggleSlideshow() {
+        guard canPlaySlideshow else { return }
+        isSlideshowPlaying.toggle()
+    }
+
+    private func runSlideshow() async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(slideshowInterval))
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            guard let next = viewModel.nextPhoto(after: currentPhoto, looping: true) else {
+                isSlideshowPlaying = false
+                return
+            }
+            navigateToPhoto(next, direction: 1, resetsSlideshowTimer: false)
+        }
+    }
     
-    private func navigateToPhoto(_ photo: Photo, direction: CGFloat) {
+    private func navigateToPhoto(_ photo: Photo, direction: CGFloat, resetsSlideshowTimer: Bool = true) {
         guard !isNavigating else { return }
         isNavigating = true
         slideDirection = direction
+        if resetsSlideshowTimer && isSlideshowPlaying {
+            slideshowTimerResetToken += 1
+        }
         
         // Ultra-snappy animation: 0.12s response, 0.95 damping for instant feel
         withAnimation(.spring(response: 0.12, dampingFraction: 0.95)) {

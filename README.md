@@ -8,6 +8,7 @@ A native macOS app built with SwiftUI that displays photos organized by month wi
 - 📅 Automatically organizes photos by capture month and year, falling back to file dates when capture metadata is unavailable
 - 🖼️ Efficient thumbnail generation with caching
 - 👁️ Quick preview with full-resolution image display
+- ▶️ Slideshow playback with a configurable default interval, adjustable controls, and looping
 - 📊 EXIF metadata extraction (date, camera, dimensions)
 - 💨 Fast and responsive UI with background processing
 - 🎨 Native macOS design with dark mode support

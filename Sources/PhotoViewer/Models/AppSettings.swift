@@ -19,6 +19,12 @@ class AppSettings: ObservableObject {
             UserDefaults.standard.set(showFilenames, forKey: AppConstants.UserDefaultsKeys.showFilenames)
         }
     }
+
+    @Published var slideshowDefaultInterval: Int {
+        didSet {
+            UserDefaults.standard.set(slideshowDefaultInterval, forKey: AppConstants.UserDefaultsKeys.slideshowDefaultInterval)
+        }
+    }
     
     // MARK: - Live Photo Settings
     @Published var enableLivePhotos: Bool {
@@ -85,6 +91,10 @@ class AppSettings: ObservableObject {
         
         self.gridColumns = defaults.object(forKey: AppConstants.UserDefaultsKeys.gridColumns) as? Int ?? AppConstants.GridDisplay.defaultColumns
         self.showFilenames = defaults.bool(forKey: AppConstants.UserDefaultsKeys.showFilenames)
+        let savedSlideshowInterval = defaults.object(forKey: AppConstants.UserDefaultsKeys.slideshowDefaultInterval) as? Int
+        self.slideshowDefaultInterval = savedSlideshowInterval.flatMap { interval in
+            AppConstants.Slideshow.intervalOptions.contains(interval) ? interval : nil
+        } ?? AppConstants.Slideshow.defaultInterval
         self.enableLivePhotos = defaults.object(forKey: AppConstants.UserDefaultsKeys.enableLivePhotos) as? Bool ?? true
         // Default live photo playback to play once for a less intrusive UX
         self.livePhotoPlaybackMode = defaults.string(forKey: AppConstants.UserDefaultsKeys.livePhotoPlaybackMode) ?? "once"
@@ -99,6 +109,7 @@ class AppSettings: ObservableObject {
     func resetToDefaults() {
         gridColumns = AppConstants.GridDisplay.defaultColumns
         showFilenames = false
+        slideshowDefaultInterval = AppConstants.Slideshow.defaultInterval
         enableLivePhotos = true
         livePhotoPlaybackMode = "once"
         automaticTripDetection = true

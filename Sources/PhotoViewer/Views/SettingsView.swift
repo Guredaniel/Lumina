@@ -77,6 +77,17 @@ struct SettingsView: View {
                 Toggle("Show filenames below photos", isOn: $appSettings.showFilenames)
             }
 
+            Section("Slideshow") {
+                Picker("Default interval", selection: $appSettings.slideshowDefaultInterval) {
+                    ForEach(AppConstants.Slideshow.intervalOptions, id: \.self) { interval in
+                        Text("\(interval) seconds").tag(interval)
+                    }
+                }
+                Text("New previews use this interval. You can change it from the preview controls.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Live Photos") {
                 Toggle("Enable Live Photos", isOn: $appSettings.enableLivePhotos)
                 if appSettings.enableLivePhotos {

@@ -63,6 +63,20 @@ final class AlbumAndBatchOperationsTests: XCTestCase {
         XCTAssertEqual(settings.tripMinimumPhotos, 10)
     }
 
+    func testSlideshowDefaultIntervalPersistsAndResetsToTenSeconds() {
+        let settings = AppSettings.shared
+        settings.slideshowDefaultInterval = 30
+
+        XCTAssertEqual(
+            UserDefaults.standard.integer(forKey: AppConstants.UserDefaultsKeys.slideshowDefaultInterval),
+            30
+        )
+
+        settings.resetToDefaults()
+
+        XCTAssertEqual(settings.slideshowDefaultInterval, AppConstants.Slideshow.defaultInterval)
+    }
+
     func testDiskCacheSizeReturnsNonNegative() {
         let size = ThumbnailCacheManager.shared.diskCacheSize()
         XCTAssertGreaterThanOrEqual(size, 0)
