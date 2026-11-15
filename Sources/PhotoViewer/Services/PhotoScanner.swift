@@ -203,14 +203,14 @@ class PhotoScanner: @unchecked Sendable {
 
     static func captureDate(from metadata: [String: String], fallback: Date) -> Date {
         let candidates = [
-            (metadata["dateTime"], metadata["dateTimeOffset"]),
-            (metadata["dateTimeDigitized"], metadata["dateTimeDigitizedOffset"]),
-            (metadata["tiffDateTime"], nil)
+            metadata["dateTime"],
+            metadata["dateTimeDigitized"],
+            metadata["tiffDateTime"]
         ]
 
-        for (value, offset) in candidates {
+        for value in candidates {
             guard let value else { continue }
-            if let date = parseCaptureDate(value, offset: offset) {
+            if let date = parseCaptureDate(value) {
                 return date
             }
         }
@@ -218,24 +218,22 @@ class PhotoScanner: @unchecked Sendable {
         return fallback
     }
 
-    private static func parseCaptureDate(_ value: String, offset: String?) -> Date? {
+    private static func parseCaptureDate(_ rawValue: String) -> Date? {
+        let value = localDateTime(from: rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
         formatter.isLenient = false
 
-        let formats = ["yyyy:MM:dd HH:mm:ss", "yyyy:MM:dd HH:mm:ss.SSS"]
-        if let offset, !offset.isEmpty {
-            formatter.timeZone = .gmt
-            for format in formats {
-                formatter.dateFormat = "\(format)XXXXX"
-                if let date = formatter.date(from: value + offset) {
-                    return date
-                }
-            }
-        }
-
-        formatter.timeZone = .current
+        let formats = [
+            "yyyy:MM:dd HH:mm:ss.SSS",
+            "yyyy:MM:dd HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss.SSS",
+            "yyyy-MM-dd HH:mm:ss"
+        ]
         for format in formats {
             formatter.dateFormat = format
             if let date = formatter.date(from: value) {
@@ -243,12 +241,22 @@ class PhotoScanner: @unchecked Sendable {
             }
         }
 
-        let isoFormatter = ISO8601DateFormatter()
-        if let date = isoFormatter.date(from: value) {
-            return date
+        return nil
+    }
+
+    private static func localDateTime(from value: String) -> String {
+        guard let separator = value.firstIndex(where: { $0 == "T" || $0 == " " }) else {
+            return value
         }
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return isoFormatter.date(from: value)
+
+        let timeStart = value.index(after: separator)
+        guard let zoneMarker = value[timeStart...].firstIndex(where: {
+            $0 == "Z" || $0 == "z" || $0 == "+" || $0 == "-"
+        }) else {
+            return value
+        }
+
+        return String(value[..<zoneMarker])
     }
     
     /// Detects if an image file has an associated Live Photo video.

@@ -437,7 +437,6 @@ struct PreviewView: View {
     @State private var slideDirection: CGFloat = 0
     @State private var isFullscreen = false
     @State private var isSlideshowPlaying = false
-    @State private var slideshowInterval: Int
     @State private var slideshowTimerResetToken = 0
     @State private var extractedMetadata: [String: String] = [:]
     @State private var preloadedImages: [URL: NSImage] = [:]
@@ -464,7 +463,7 @@ struct PreviewView: View {
     private var slideshowTaskKey: SlideshowTaskKey {
         SlideshowTaskKey(
             isPlaying: isSlideshowPlaying,
-            interval: slideshowInterval,
+            interval: appSettings.slideshowDefaultInterval,
             resetToken: slideshowTimerResetToken
         )
     }
@@ -477,7 +476,6 @@ struct PreviewView: View {
         self.initialPhoto = photo
         self.viewModel = viewModel
         self._currentPhoto = State(initialValue: photo)
-        self._slideshowInterval = State(initialValue: AppSettings.shared.slideshowDefaultInterval)
     }
     
     var body: some View {
@@ -577,26 +575,6 @@ struct PreviewView: View {
                     .disabled(!canPlaySlideshow)
                     .help(isSlideshowPlaying ? "Pause Slideshow" : "Play Slideshow")
                     .accessibilityLabel(isSlideshowPlaying ? "Pause slideshow" : "Play slideshow")
-
-                    Menu {
-                        ForEach(AppConstants.Slideshow.intervalOptions, id: \.self) { interval in
-                            Button {
-                                slideshowInterval = interval
-                                slideshowTimerResetToken += 1
-                            } label: {
-                                if slideshowInterval == interval {
-                                    Label("\(interval) seconds", systemImage: "checkmark")
-                                } else {
-                                    Text("\(interval) seconds")
-                                }
-                            }
-                        }
-                    } label: {
-                        Label("\(slideshowInterval)s", systemImage: "timer")
-                    }
-                    .disabled(!canPlaySlideshow)
-                    .help("Slideshow interval")
-                    .accessibilityLabel("Slideshow interval, \(slideshowInterval) seconds")
 
                     Button(action: {
                         withAnimation(.spring(response: 0.22, dampingFraction: 0.9)) {
@@ -832,7 +810,7 @@ struct PreviewView: View {
     private func runSlideshow() async {
         while !Task.isCancelled {
             do {
-                try await Task.sleep(for: .seconds(slideshowInterval))
+                try await Task.sleep(for: .seconds(appSettings.slideshowDefaultInterval))
             } catch {
                 return
             }

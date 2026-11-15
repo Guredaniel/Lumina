@@ -83,7 +83,7 @@ struct SettingsView: View {
                         Text("\(interval) seconds").tag(interval)
                     }
                 }
-                Text("New previews use this interval. You can change it from the preview controls.")
+                Text("The slideshow automatically advances at this interval.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

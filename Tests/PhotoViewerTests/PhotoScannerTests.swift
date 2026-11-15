@@ -4,7 +4,7 @@ import XCTest
 @testable import PhotoViewer
 
 final class PhotoScannerTests: XCTestCase {
-    func testCaptureDateUsesOriginalExifDateAndOffset() throws {
+    func testCaptureDateUsesOriginalExifWallTimeInsteadOfTimezoneOffset() throws {
         let fallback = Date(timeIntervalSince1970: 0)
         let date = PhotoScanner.captureDate(
             from: [
@@ -15,7 +15,7 @@ final class PhotoScannerTests: XCTestCase {
             fallback: fallback
         )
 
-        XCTAssertEqual(date.timeIntervalSince1970, try isoDate("2024-03-01T07:30:00Z").timeIntervalSince1970, accuracy: 1)
+        XCTAssertEqual(date, try localDate(year: 2024, month: 2, day: 29, hour: 23, minute: 30))
     }
 
     func testCaptureDateFallsBackToDigitizedDateWhenOriginalIsInvalid() throws {
@@ -29,7 +29,7 @@ final class PhotoScannerTests: XCTestCase {
             fallback: fallback
         )
 
-        XCTAssertEqual(date.timeIntervalSince1970, try isoDate("2021-06-15T12:00:00Z").timeIntervalSince1970, accuracy: 1)
+        XCTAssertEqual(date, try localDate(year: 2021, month: 6, day: 15, hour: 12))
     }
 
     func testCaptureDateUsesFileDateWhenMetadataIsUnavailable() {
@@ -60,12 +60,12 @@ final class PhotoScannerTests: XCTestCase {
 
     func testCaptureDateParsesFractionalISO8601Values() throws {
         let date = PhotoScanner.captureDate(
-            from: ["dateTime": "2024-02-29T23:30:00.123Z"],
+            from: ["dateTime": "2024-02-29T23:30:00.123-08:00"],
             fallback: Date(timeIntervalSince1970: 0)
         )
-        let expected = try isoDate("2024-02-29T23:30:00Z")
+        let expected = try localDate(year: 2024, month: 2, day: 29, hour: 23, minute: 30, nanosecond: 123_000_000)
 
-        XCTAssertEqual(date.timeIntervalSince1970, expected.timeIntervalSince1970 + 0.123, accuracy: 0.001)
+        XCTAssertEqual(date.timeIntervalSince1970, expected.timeIntervalSince1970, accuracy: 0.001)
     }
 
     func testInvalidCaptureDatesUseFileDateFallback() {
@@ -114,6 +114,7 @@ final class PhotoScannerTests: XCTestCase {
         );
         INSERT INTO photos (url_path, filename, date_taken, file_modified_date, file_size, is_favorite)
         VALUES ('/tmp/legacy-photo.jpg', 'legacy-photo.jpg', 0, 0, 123, 1);
+        PRAGMA user_version = 1;
         """
         let setupResult = sqlite3_exec(legacyDB, createLegacyPhoto, nil, nil, nil)
         let closeResult = sqlite3_close_v2(legacyDB)
@@ -140,10 +141,14 @@ final class PhotoScannerTests: XCTestCase {
         }
     }
 
-    private func isoDate(_ value: String) throws -> Date {
-        let formatter = ISO8601DateFormatter()
-        let date = formatter.date(from: value)
-        XCTAssertNotNil(date)
-        return try XCTUnwrap(date)
+    private func localDate(year: Int, month: Int, day: Int, hour: Int, minute: Int = 0, nanosecond: Int = 0) throws -> Date {
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        components.minute = minute
+        components.nanosecond = nanosecond
+        return try XCTUnwrap(Calendar.current.date(from: components))
     }
 }

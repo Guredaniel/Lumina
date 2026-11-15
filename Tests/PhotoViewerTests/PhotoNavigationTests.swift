@@ -41,6 +41,41 @@ final class PhotoNavigationTests: XCTestCase {
         XCTAssertNil(viewModel.nextPhoto(after: unknownPhoto, looping: true))
     }
 
+    func testPhotosWithinMonthAreOrderedByFullCaptureTime() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PhotoNavigationTests-\(UUID().uuidString)", isDirectory: true)
+        let databaseURL = directory.appendingPathComponent("photos.sqlite")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let photoDirectory = directory.appendingPathComponent("library", isDirectory: true)
+        let earlier = Photo(url: photoDirectory.appendingPathComponent("earlier.jpg"), date: try date(hour: 9))
+        let middle = Photo(url: photoDirectory.appendingPathComponent("middle.jpg"), date: try date(hour: 12))
+        let later = Photo(url: photoDirectory.appendingPathComponent("later.jpg"), date: try date(hour: 15))
+
+        do {
+            let database = SQLiteDatabase(databaseURL: databaseURL)
+            let entries = [middle, earlier, later].map { photo in
+                (photo: photo, fileModifiedDate: photo.date, fileSize: 1)
+            }
+            database.batchUpsertPhotos(entries)
+
+            let months = database.fetchPhotoMonths(forDirectories: [photoDirectory])
+
+            XCTAssertEqual(months.count, 1)
+            XCTAssertEqual(months.first?.photos.map(\.url), [later.url, middle.url, earlier.url])
+        }
+    }
+
+    private func date(hour: Int) throws -> Date {
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 6
+        components.day = 15
+        components.hour = hour
+        return try XCTUnwrap(Calendar.current.date(from: components))
+    }
+
     private func makePhotos(prefix: String, count: Int) -> [Photo] {
         (0..<count).map { index in
             Photo(
