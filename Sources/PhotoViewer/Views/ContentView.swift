@@ -447,6 +447,7 @@ struct ContentView: View {
                         }
                     }
             }
+            .id(validatedSelection)
             .overlay(alignment: .bottomTrailing) {
                 selectionBubble
                     .padding(20)
