@@ -13,14 +13,14 @@ class ThumbnailService: @unchecked Sendable {
     /// Generates and caches a thumbnail for the given photo.
     /// Uses optimized native decoding and async/await for non-blocking operations.
     func generateThumbnail(for photo: URL, size: CGSize = CGSize(width: 200, height: 200)) async throws -> NSImage? {
-        // Check cache first
-        if let cachedImage = ThumbnailCacheManager.shared.thumbnail(for: photo) {
+        let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
+        if let cachedImage = ThumbnailCacheManager.shared.thumbnail(for: photo),
+           Self.hasSufficientResolution(cachedImage, for: size, backingScaleFactor: scale) {
             return cachedImage
         }
         
         // Generate thumbnail on a background thread
         return try await Task.detached(priority: .userInitiated) { [self] () -> NSImage? in
-            let scale = NSScreen.main?.backingScaleFactor ?? 2.0
             var image: NSImage? = nil
             
             // Determine if it's a video
@@ -39,6 +39,18 @@ class ThumbnailService: @unchecked Sendable {
             
             return image
         }.value
+    }
+
+    static func hasSufficientResolution(
+        _ image: NSImage,
+        for size: CGSize,
+        backingScaleFactor: CGFloat
+    ) -> Bool {
+        let availablePixels = image.representations.reduce(0) {
+            max($0, max($1.pixelsWide, $1.pixelsHigh))
+        }
+        let requiredPixels = max(size.width, size.height) * backingScaleFactor
+        return CGFloat(availablePixels) >= requiredPixels
     }
     
     /// Generates a thumbnail for an image file using optimized CGImageSource decoding.

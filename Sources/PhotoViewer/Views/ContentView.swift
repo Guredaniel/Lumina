@@ -4,6 +4,7 @@ import AppKit
 enum SidebarSelection: Hashable {
     case allPhotos
     case favorites
+    case map
     case source(URL)
     case sourceYear(URL, Int)
     case sourceMonth(URL, String)
@@ -147,6 +148,9 @@ struct ContentView: View {
             Label("Favorites", systemImage: "heart.fill")
                 .tag(SidebarSelection.favorites)
                 .foregroundColor(selection == .favorites ? .white : .brown)
+
+            Label("Map", systemImage: "map")
+                .tag(SidebarSelection.map)
         }
     }
 
@@ -364,6 +368,11 @@ struct ContentView: View {
             errorView(message: errorMessage)
         } else if viewModel.isLoading || (viewModel.photoMonths.isEmpty && viewModel.isScanning) {
             loadingView
+        } else if case .map = validatedSelection {
+            PhotoMapView(photos: viewModel.allPhotosFlat) { photo in
+                viewModel.selectedPhoto = photo
+            }
+            .navigationTitle(detailTitle)
         } else {
             ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -386,6 +395,8 @@ struct ContentView: View {
                         } else {
                             PhotoGridView(title: "Favorites", photos: viewModel.favoritePhotos, viewModel: viewModel)
                         }
+                    case .map:
+                        EmptyView()
                     case .year(let selectedYear):
                         if let monthsInYear = viewModel.groupedYears[selectedYear], !monthsInYear.isEmpty {
                             ForEach(monthsInYear) { month in
@@ -581,6 +592,8 @@ struct ContentView: View {
             return "All Photos"
         case .favorites:
             return "Favorites"
+        case .map:
+            return "Map"
         case .source(let directory):
             return "Source: \(directory.lastPathComponent)"
         case .sourceYear(let directory, let year):

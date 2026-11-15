@@ -6,12 +6,15 @@ A native macOS app built with SwiftUI that displays photos organized by month wi
 
 - 📁 Select any folder to scan for photos recursively
 - 📅 Organizes photos by capture month and year using embedded capture timestamps, with file-date fallback
+- 🗺️ Shows GPS-tagged photos on a map, grouped by nearby locations, with direct preview access and a date-range filter
 - 🖼️ Efficient thumbnail generation with caching
 - 👁️ Quick preview with full-resolution image display
 - ▶️ Looping slideshow playback with an interval configured in General settings
 - 📊 EXIF metadata extraction (date, camera, dimensions)
 - 💨 Fast and responsive UI with background processing
 - 🎨 Native macOS design with dark mode support
+
+The Map view uses Apple MapKit for map data, so an internet connection may be needed to load map tiles.
 
 ## System Requirements
 
