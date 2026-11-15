@@ -30,12 +30,8 @@ fi
 
 # Build the project using Swift Package Manager
 echo "Building with Swift Package Manager..."
+BUILD_PATH="$(swift build --configuration "$BUILD_CONFIG" --show-bin-path)/Lumina"
 swift build --configuration "$BUILD_CONFIG"
-
-BUILD_PATH=".build/apple/Products/$BUILD_CONFIG_DISPLAY/Lumina"
-if [ ! -x "$BUILD_PATH" ]; then
-    BUILD_PATH=".build/$BUILD_CONFIG/Lumina"
-fi
 
 if [ -x "$BUILD_PATH" ]; then
     echo "✅ Build successful!"
@@ -54,7 +50,7 @@ if [ -x "$BUILD_PATH" ]; then
     
     # Copy Info.plist and resolve variables
     sed -e "s/\$(EXECUTABLE_NAME)/Lumina/g" \
-        -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.example.Lumina/g" \
+        -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.guredaniel.lumina/g" \
         -e "s/\$(PRODUCT_NAME)/Lumina/g" \
         Info.plist > "${APP_BUNDLE_PATH}/Contents/Info.plist"
     
